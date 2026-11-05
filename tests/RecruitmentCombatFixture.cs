@@ -173,11 +173,12 @@ namespace pitTeam.Components
         __COOPERATION_RECEIVER__
     }
     public class BotFollowerPlayer {
-        public bool IsSquadMate; public BotOwner Bot; public BotOwner GetBot() => Bot;
+        public bool IsSquadMate,IsRosterMember; public BotOwner Bot; public BotOwner GetBot() => Bot;
         private static Type _sainEnableType;
         private static MethodInfo _getSainByBotOwnerMethod, _getSainByProfileMethod;
         __NATIVE_PERSONALITY_CAPTURE__
     }
+    public class BossFollowerPlayer : BotFollowerPlayer { }
 }
 namespace pitTeam
 {
@@ -203,6 +204,8 @@ namespace pitTeam.Modules
         }
     }
     public static class AllegiancePmcFriendship {
+        public static bool GuardDuty;
+        public static bool HasRecruitmentGuardDuty(BotOwner bot)=>GuardDuty;
         public static bool Allowed=true, IsEnabled=true, Acceptance=true, ResolveHandled, ResolveAccepted=true;
         public static int AcceptanceCalls, ResolveCalls, Refusals; public static Player EncounterPlayer;
         internal static FriendlyEncounterInteraction Interaction; internal static AllegianceFriendlyGreeting Greeting; public static BotOwner InteractionBot;
@@ -299,6 +302,7 @@ public static class RecruitmentCombatChecks
     private static void Check(bool value, string name) { if (!value) throw new Exception(name); count++; }
     private static BotOwner Fresh()
     {
+        AllegiancePmcFriendship.GuardDuty = false;
         AllegiancePmcFriendship.Allowed = true;
         AllegiancePmcFriendship.Acceptance = true; AllegiancePmcFriendship.AcceptanceCalls = 0;
         GameplayModeRuntime.IsAllegiance = false;
@@ -361,9 +365,31 @@ public static class RecruitmentCombatChecks
             Check(BossPlayers.Added==0,"First-group delayed completion rechecks Fence capacity: "+allegiance);
         }
     }
+    private static void CompanionCapacityChecks()
+    {
+        foreach(bool rosterGoons in new[]{false,true})
+        foreach(int recruits in new[]{0,1,2})
+        {
+            var candidate=Fresh();GameplayModeRuntime.IsAllegiance=true;candidate.Side=EPlayerSide.Savage;
+            for(int i=0;i<3;i++)BossPlayers.Active.Add(new BossFollowerPlayer{Bot=new BotOwner{ProfileId="goon-"+i},IsRosterMember=rosterGoons});
+            BossPlayers.Active.Add(new BotFollowerPlayer{Bot=new BotOwner{ProfileId="saved-rogue"},IsRosterMember=true});
+            BossPlayers.Active.Add(new BotFollowerPlayer{Bot=new BotOwner{ProfileId="saved-pmc"},IsRosterMember=true,IsSquadMate=true});
+            for(int i=0;i<recruits;i++)BossPlayers.Active.Add(new BotFollowerPlayer{Bot=new BotOwner{ProfileId="field-rogue-"+i}});
+            Check(FollowRequestPatch.HasPickupCapacity(BossPlayers.Boss.Value)==(recruits<2),"three roster/quest Goons and saved members do not consume Allegiance's two field-recruit slots: "+rosterGoons+"/"+recruits);
+            Ask(candidate);
+            Check(AllegiancePmcFriendship.AcceptanceCalls==(recruits<2?1:0),"acceptance roll is reached with Goons unless actual field pickups fill capacity");
+            if(recruits>=2){Check(BotOwnerManualUpdatePatch.BotOwnerUpdate.Count==0,"full real pickup capacity still rejects before rolling");continue;}
+            Deferred(candidate);pitTeam.Utils.Utils.Pending();
+            Check(BossPlayers.Added==1,"deferred conversion also excludes roster/temporary Goons from pickup count");
+            Check(FollowRequestPatch.HasPickupCapacity(BossPlayers.Boss.Value)==(recruits==0),"newly field-recruited Rogue consumes one real pickup slot");
+        }
+    }
     public static int Run()
     {
+        var guard=Fresh();AllegiancePmcFriendship.GuardDuty=true;Ask(guard);
+        Check(guard.BotTalk.Last==EPhraseTrigger.Negative && BotOwnerManualUpdatePatch.BotOwnerUpdate.Count==0 && BossPlayers.Denied.Count==0,"Guard duty says Negative before any recruitment/level decision");
         FenceCapacityChecks();
+        CompanionCapacityChecks();
         foreach(int level in new[]{0,20,100}) {
             var fieldScav=Fresh();GameplayModeRuntime.IsAllegiance=true;fieldScav.Side=EPlayerSide.Savage;
             fieldScav.Profile.Info.Level=level;BossPlayers.Denied.Add(fieldScav.ProfileId);
@@ -405,7 +431,7 @@ public static class RecruitmentCombatChecks
         var secondConversion=pitTeam.Utils.Utils.Pending;firstConversion();secondConversion();
         Check(BossPlayers.Added==1,"Duplicate delayed callbacks cannot convert the same bot twice");
         var freed=Fresh();freed.Profile.Info.Level=1;pitFireTeam.maximumPickup.Value=1;
-        BossPlayers.Active.Add(new BotFollowerPlayer {Bot=new BotOwner(),IsSquadMate=true});
+        BossPlayers.Active.Add(new BotFollowerPlayer {Bot=new BotOwner(),IsSquadMate=true,IsRosterMember=true});
         BossPlayers.Active.Add(new BotFollowerPlayer {Bot=new BotOwner {IsDead=true}});
         BossPlayers.Active.Add(new BotFollowerPlayer {Bot=new BotOwner {BotState=EBotState.Inactive}});
         Ask(freed);Deferred(freed);pitTeam.Utils.Utils.Pending();

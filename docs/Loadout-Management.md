@@ -422,7 +422,7 @@ When a `Restricted` teammate dies while using `Default` with Field Upkeep enable
 
 ### Field Upkeep validation
 
-See [Core 1.0.1 validation](validation/Release-1.0.1.md) for restored upkeep, settings synchronization, persistence and deployment evidence. The on/off extraction and death behavior still requires fresh raid qualification.
+See Core 1.0.1 validation (historical notes retained in Git) for restored upkeep, settings synchronization, persistence and deployment evidence. The on/off extraction and death behavior still requires fresh raid qualification.
 
 ## Current Gaps
 

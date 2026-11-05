@@ -23,11 +23,13 @@ internal sealed class GoonLayerLease : IDisposable
             Brain._activeLayers.Remove(layer);
         }
     }
-    private static bool IsConflict(AICoreLayer<BotLogicDecision> layer)
+    private bool IsConflict(AICoreLayer<BotLogicDecision> layer)
         => layer is BossKnightFightLayer || layer is BigPipeFightLayer || layer is BirdEyeFightLayer || layer is BirdEyeHoldLayer ||
            layer is AssaultBuildingLayer || layer is ControlBuildingLayer ||
            layer is AssaultHaveEnemyLayer || layer is WarnPlayerLayer || layer is PeacefulRequestLayer ||
-           layer.Name() == "SAIN : Combat Layer" || layer.Name() == "SAIN : Squad Layer";
+           layer.Name() == "SAIN : Combat Layer" || layer.Name() == "SAIN : Squad Layer" ||
+           owner.Profile?.Info?.Settings?.Role == WildSpawnType.exUsec &&
+               (layer is ExUsecPeacefulRequestLayer || layer is GroupAttackLayer || layer is StationaryWithSuppressLayer);
     public void Dispose()
     {
         if (owner != null && !owner.IsDead && ReferenceEquals(owner.Brain?.BaseBrain, Brain))

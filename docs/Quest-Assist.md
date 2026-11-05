@@ -1,0 +1,11 @@
+# Teammate quest kill credit
+
+Core forwards eligible kills by deployed roster members to the human leader's native quest controller. `BotFollowerPlayer.IsRosterMember` records deployment origin independently of `IsSquadMate`, which still controls existing equipment, command and XP permissions. Ordinary saved PMCs/Rogues set the flag from the saved-spawn constructor argument. `BossFollowerPlayer` keeps `IsSquadMate == false` while setting roster origin from its saved deployment argument. Temporary quest companions and field recruits have no general quest-assist eligibility. The flag is assigned again through normal saved spawning on map transit; no database migration is required.
+
+The killer must be within 80 metres of the leader, inclusive. Core temporarily supplies the killer's profile to the leader's native `CheckKillConditionCounter` calls and preserves the actual weapon, lethal body part, killer location, kill distance, victim role/time/equipment/zones/effects, and killer effects/buffs. Native quest requirements determine credit. The original quest-controller profile and forwarding scope are restored even when a native check throws.
+
+The thread-local `PlayerKilledPatch.IsForwardingRosterKill` identifies this synthetic input. Going Rogue excludes its own companion counters during generic forwarding; its separate death handler remains their sole Goon-kill forwarder, preserving personal-kill exclusions, role rules, duplicate-death protection and the 120-metre allowance for specific Birdeye objectives. Ordinary quests remain eligible. See [Knight quests](../going-rogue/docs/Knight-Quests.md).
+
+[Raid kill results](Raid-Results.md) use the separate `ReportsRaidKills` capability. Showing a temporary Goon's kill in the result list does not grant ordinary quest credit. The existing squadmate XP gate is unchanged.
+
+Sources: [follower identity](../client/Components/BotFollowerPlayer.cs), [boss identity](../client/Components/BossFollowerPlayer.cs), [kill dispatch and native forwarding](../client/Patches/PlayerPatch.cs), and [Knight counter admission](../going-rogue/client/Quests/KnightQuestRuntime.cs). Fixtures verify dispatch, inputs and restoration; live EFT counter progression requires in-game qualification.

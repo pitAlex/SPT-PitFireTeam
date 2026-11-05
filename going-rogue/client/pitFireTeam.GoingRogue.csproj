@@ -3,16 +3,19 @@
     <TargetFramework>net472</TargetFramework>
     <LangVersion>latest</LangVersion>
     <AssemblyName>pitFireTeam.GoingRogue</AssemblyName>
-    <Version>0.1.0</Version>
+    <Version>1.0.0</Version>
     <BuildSAINAddon>false</BuildSAINAddon>
   </PropertyGroup>
   <ItemGroup>
     <Content Include="Resources/going-rogue-card.png" Link="going-rogue-card.png" CopyToOutputDirectory="PreserveNewest" />
+    <EmbeddedResource Include="Resources/quests/FriendlyPMC_Zones.json" />
     <Compile Include="../shared/KnightQuestPolicy.cs" Link="Quests/KnightQuestPolicy.cs" />
+    <Compile Include="../shared/RogueAlliancePolicy.cs" Link="RogueAlliancePolicy.cs" />
     <ProjectReference Include="../../client/pitFireTeam.csproj" AdditionalProperties="BuildSAINAddon=false" Private="false" />
     <Reference Include="BepInEx"><HintPath>../../client/libs4.1/BepInEx.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="DrakiaXYZ-BigBrain"><HintPath>../../client/libs4.1/DrakiaXYZ-BigBrain.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="Assembly-CSharp"><HintPath>../../client/libs4.1/Assembly-CSharp.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="DissonanceVoip"><HintPath>../../client/libs4.1/DissonanceVoip.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="Sirenix.Serialization"><HintPath>../../client/libs4.1/Sirenix.Serialization.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine"><HintPath>../../client/libs/UnityEngine.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine.CoreModule"><HintPath>../../client/libs/UnityEngine.CoreModule.dll</HintPath><Private>false</Private></Reference>

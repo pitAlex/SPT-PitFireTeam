@@ -14,7 +14,7 @@ namespace pitTeam.Modules
     /// into SAIN and read SAIN's exact retained target/pressure state, but it never grants EFT sight,
     /// aim, or fire permission.
     /// </summary>
-    public static class SainGoalEnemyBridge
+    public static partial class SainGoalEnemyBridge
     {
         private static bool sainAccessorResolved;
         private static bool accessorFailureLogged;

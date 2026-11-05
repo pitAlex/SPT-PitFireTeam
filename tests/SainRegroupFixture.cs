@@ -52,7 +52,7 @@ namespace pitTeam.Modules {
     public static partial class BattleRecorder {public static List<string> Records=new List<string>();public static void RecordObjectiveSwitch(BotOwner o,string mode,string reason){Records.Add(mode+":"+reason);}}
 }
 namespace pitTeam.Utils {
-    public static class FollowerAwareness {public static bool Damaged;public static bool WasRecentlyDamaged(BotOwner owner)=>Damaged;}
+    public static class FollowerAwareness {public static bool Damaged;public static bool WasRecentlyDamaged(BotOwner owner)=>Damaged;public static bool TryGetIncomingFireSuppressTarget(BotOwner owner,EnemyInfo enemy,out Vector3 target){target=Vector3.zero;return false;}}
     public static class Utils {
         public static bool PathComplete=true;public static float PathScale=1;public static int PathCalls;public static UnityEngine.AI.NavMeshPath LastPath;
         public static bool TryGetCompletePathDistance(Vector3 a,Vector3 b,out float distance,UnityEngine.AI.NavMeshPath path=null){PathCalls++;LastPath=path;distance=(a-b).magnitude*PathScale;return PathComplete;}

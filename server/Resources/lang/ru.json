@@ -79,8 +79,8 @@
   "socialUi": {
     "GoingRogueKnightTraderName": "Найт",
     "GoingRogueKnightTraderLocation": "Неизвестно",
-    "GoingRogueKnightTraderDescription": "Командир отряда Отступников. Доступен в режиме Going Rogue с 20-го уровня.",
-    "GoingRogueKnightTraderLocked": "Найт доступен только в режиме Going Rogue с 20-го уровня.",
+    "GoingRogueKnightTraderDescription": "Командир отряда Отступников. Доступен в режиме Allegiance с 20-го уровня.",
+    "GoingRogueKnightTraderLocked": "Найт доступен только в режиме Allegiance с 20-го уровня.",
     "ProfileHeal": "ЛЕЧИТЬ",
     "TeammateStillWounded": "{0} ещё ранен и пока не может присоединиться к рейду",
     "ProfileHealingTitle": "Лечение у Терапевта",
@@ -220,6 +220,7 @@
     "RemoveRecruitedTeammatePrompt": "Вы уверены, что хотите убрать завербованного бойца {0} из отряда?\nПлата за удаление: {1} ₽\nСнаряжение будет отправлено через службу доставки.\nЭто действие нельзя отменить",
     "TeammateDeleteInsufficientFunds": "Недостаточно средств для выполнения операции.",
     "TeammateDeleteFailed": "Не удалось завершить удаление бойца. Повторите попытку; завершённое удаление не приведёт к повторному списанию.",
+    "CompanionRemovalLocked": "Этого союзника нельзя удалить из вашего отряда.",
     "TeammateDeleteRecoveryFailed": "Не удалось восстановить состояние предыдущей оплаты удаления бойца. Удаление заблокировано во избежание ошибочного списания.",
     "TeammateDeleteDeliveryFailed": "Боец убран из отряда, но доставка снаряжения ещё не завершена. Откройте «Мой отряд» снова, чтобы повторить доставку. Если ошибка сохраняется, перезапустите сервер.",
     "RemovedTeammateEquipmentDelivery": "Снаряжение удалённого из отряда бойца готово к получению.",

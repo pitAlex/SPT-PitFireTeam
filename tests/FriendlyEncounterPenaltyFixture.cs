@@ -5,25 +5,33 @@ using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
 using EFT;
+using EFT.Ballistics;
 using pitTeam.Components;
 using pitTeam.Modules;
 using pitTeam.Shared;
 using SPT.Common.Http;
 
 namespace EFT {
-    public enum WildSpawnType {assault,pmcBEAR,bossKnight,followerBigPipe,followerBirdEye}
+    public enum WildSpawnType {assault,pmcBEAR,bossKnight,followerBigPipe,followerBirdEye,exUsec}
     public class Settings {public WildSpawnType Role=WildSpawnType.pmcBEAR;}
     public enum EPlayerSide {Usec,Bear,Savage}
     public interface IPlayer {bool IsYourPlayer{get;} string ProfileId{get;} EPlayerSide Side{get;}}
     public class Info {public string Nickname="recruit";public Settings Settings=new Settings();}
     public class Profile {public Info Info=new Info();}
-    public class Player : IPlayer {public bool IsYourPlayer{get;set;} public bool IsAI=true;public string ProfileId{get;set;} public string AccountId="123";public EPlayerSide Side{get;set;} public Profile Profile=new Profile();}
+    public class AIData {public BotOwner BotOwner;}
+    public class BotsGroup {public bool Enemy;public bool IsEnemy(IPlayer p)=>Enemy;}
+    public class EnemyController {public bool Enemy;public bool IsEnemy(IPlayer p)=>Enemy;}
+    public class Goal {public Player Person;} public class Memory {public Goal GoalEnemy;}
+    public class BotOwner {public BotsGroup BotsGroup=new();public EnemyController EnemiesController=new();public Memory Memory=new();public bool SelectedFriendly=true;}
+    public class Health {public bool IsAlive=true;}
+    public class Player : IPlayer {public bool IsYourPlayer{get;set;} public bool IsAI=true;public string ProfileId{get;set;} public string AccountId="123";public EPlayerSide Side{get;set;} public Profile Profile=new Profile();public AIData AIData=new(){BotOwner=new()};public Health HealthController=new();}
 }
+namespace EFT.Ballistics {public class DamageInfo {public Attacker Player;public float Damage=100;}public class Attacker {public IPlayer iPlayer;}}
 namespace pitTeam.Utils {public static class Props {public static readonly List<WildSpawnType> BossFollowersType=new List<WildSpawnType>{WildSpawnType.bossKnight,WildSpawnType.followerBigPipe,WildSpawnType.followerBirdEye};}}
 namespace UnityEngine {public static class Random {public static int Range(int min,int max)=>min;}}
 namespace pitTeam.Components {
     public class Boss {public Player realPlayer;}
-    public class BotFollowerPlayer {public bool IsSquadMate;public Boss Owner;public Boss GetBoss()=>Owner;}
+    public class BotFollowerPlayer {public bool IsSquadMate;public bool HasPersistentProgress=>IsSquadMate;public Boss Owner;public Boss GetBoss()=>Owner;}
 }
 namespace pitTeam {
     public class Flag {public bool Value=true;}
@@ -32,6 +40,8 @@ namespace pitTeam {
     public static class pitFireTeam {public static Flag npcSendMessage=new Flag();public static IntSetting friendlyEncounterChance=new IntSetting();public static Language optionsLang=new Language();}
 }
 namespace pitTeam.Modules {
+    public static class AllegianceScavRelations {public static void RememberBeforeDamage(DamageInfo damage,Player target) { }}
+    public static class GameplayModeAddons {public static bool? RogueFriend=true;public static bool? RecruitmentFriendship(string role)=>role=="exUsec"?RogueFriend:null;}
     public static class Logger {public static List<string> Errors=new List<string>();public static void LogError(object error){lock(Errors) Errors.Add(error.ToString());}}
     public static class BossPlayers {public static Dictionary<string,BotFollowerPlayer> Followers=new Dictionary<string,BotFollowerPlayer>();public static BotFollowerPlayer GetFollowerByProfileId(string id)=>Followers.TryGetValue(id,out var follower)?follower:null;}
     public static class GameplayModeRuntime {
@@ -42,17 +52,23 @@ namespace pitTeam.Modules {
     }
 }
 namespace pitTeam.Patches {
+    public static class PlayerKilledPatch {public static void TryRememberFriendlyPmcBeforePlayerDamage(DamageInfo damage,Player target)=>KillBoundary.TryRememberFriendlyPmcBeforePlayerDamage(damage,target);}
     public static class KillBoundary {
         private const string KillMessageRoute="/singleplayer/pitfireteam/postraid/kill-message";
         private static readonly HashSet<string> RecordedKillMessageVictims=new HashSet<string>();
         private static readonly object RecordedKillMessageLock=new object();
         private static bool IsFriendlyPmcKillMessageContextEnabled()=>false;
-        private static bool WasFriendlyBeforePlayerDamage(string id)=>false;
+        private static readonly HashSet<string> PlayerDamagedPmcVictims=new();
+        private static readonly HashSet<string> FriendlyBeforePlayerDamageVictims=new();
+        private static bool WasFriendlyBeforePlayerDamage(string id)=>FriendlyBeforePlayerDamageVictims.Contains(id);
+        public static void Hit(Player target,IPlayer attacker)=>TryRememberFriendlyPmcBeforePlayerDamage(new EFT.Ballistics.DamageInfo{Player=new EFT.Ballistics.Attacker{iPlayer=attacker}},target);
         private static bool IsPmc(EPlayerSide side)=>side==EPlayerSide.Usec || side==EPlayerSide.Bear;
         public static void Record(Player victim,IPlayer aggressor)=>TryRecordPlayerKillMessage(victim,aggressor);
         __RECORD_METHOD__
         __KIND_METHOD__
         __TEXT_METHOD__
+        __HIT_METHOD__
+        __EARLY_METHOD__
     }
 }
 namespace SPT.Common.Http {
@@ -71,7 +87,7 @@ namespace SPT.Common.Http {
             long killedAt=(long)body["killedAtUnixMs"];
             if(killedAt>0) {
                 string id=(string)body["raidId"]+"/"+(string)body["victimProfileId"];
-                if(!State.Entries.Any(entry=>entry.Id==id)) State.Entries.Add(new FriendlyEncounterPenaltyEntry{Id=id,ExpiresAtUnixMs=killedAt+FriendlyEncounterPenaltyPolicy.DurationMs});
+                if(!State.Entries.Any(entry=>entry.Id==id)) State.Entries.Add(new FriendlyEncounterPenaltyEntry{Id=id,ExpiresAtUnixMs=killedAt+FriendlyEncounterPenaltyPolicy.DurationMs,AffectsRecruitment=(string)body["victimRole"]=="exUsec"});
             }
             if(LoseResponse) {LoseResponse=false;throw new System.IO.IOException("Simulated lost response after committed penalty");}
             return Response();
@@ -89,6 +105,7 @@ public static class PenaltyChecks {
     private static void Reset() {
         GameplayModeRuntime.WaitReports();RequestHandler.Posts.Clear();RequestHandler.State=new FriendlyEncounterPenaltyState();
         GameplayModeRuntime.IsAllegiance=true;pitTeam.pitFireTeam.npcSendMessage.Value=true;
+        GameplayModeAddons.RogueFriend=true;
         pitTeam.pitFireTeam.friendlyEncounterChance.Value=30;
         FriendlyEncounterPenaltyRuntime.ReloadAsync().GetAwaiter().GetResult();
     }
@@ -121,6 +138,36 @@ public static class PenaltyChecks {
         pitTeam.Patches.KillBoundary.Record(new Player{ProfileId="ordinary"},Human);
         var nonAi=Recruit("non-ai");nonAi.IsAI=false;pitTeam.Patches.KillBoundary.Record(nonAi,Human);GameplayModeRuntime.WaitReports();
         Check(RequestHandler.Posts.Count==0 && FriendlyEncounterPenaltyRuntime.GetReductionPercent()==0,"spawned, foreign, other-aggressor, ordinary and non-AI victims are excluded");
+        foreach(bool spawned in new[]{false,true}) {
+            Reset();var rogue=Recruit("rogue-recruit-"+spawned,spawned);rogue.Profile.Info.Settings.Role=WildSpawnType.exUsec;
+            pitTeam.Patches.KillBoundary.Record(rogue,Human);GameplayModeRuntime.WaitReports();
+            Check(RequestHandler.Posts.Count==(spawned?0:1) && FriendlyEncounterPenaltyRuntime.GetRecruitmentReductionPercent()==(spawned?0:15),"only field recruited Rogue pays encounter and recruitment penalties, spawned exempt");
+        }
+        Reset();var savedCleanup=Recruit("saved-cleanup",true);savedCleanup.Profile.Info.Settings.Role=WildSpawnType.exUsec;
+        pitTeam.Patches.KillBoundary.Hit(savedCleanup,Human);pitTeam.Patches.KillBoundary.Record(savedCleanup,Human);
+        BossPlayers.Followers.Remove(savedCleanup.ProfileId);pitTeam.Patches.KillBoundary.Record(savedCleanup,Human);GameplayModeRuntime.WaitReports();
+        Check(RequestHandler.Posts.Count==0&&FriendlyEncounterPenaltyRuntime.GetRecruitmentReductionPercent()==0,"saved exemption survives native follower cleanup before death postfix");
+        Reset();var ambientRogue=new Player{ProfileId="ambient-rogue",Side=EPlayerSide.Savage};ambientRogue.Profile.Info.Settings.Role=WildSpawnType.exUsec;
+        pitTeam.Patches.KillBoundary.EarlyDamage(ambientRogue,new DamageInfo{Player=new Attacker{iPlayer=Human}});
+        ambientRogue.AIData.BotOwner.BotsGroup.Enemy=true;ambientRogue.AIData.BotOwner.SelectedFriendly=false;
+        pitTeam.Patches.KillBoundary.Record(ambientRogue,Human);pitTeam.Patches.KillBoundary.Record(ambientRogue,Human);GameplayModeRuntime.WaitReports();
+        Check(RequestHandler.Posts.Count==1 && FriendlyEncounterPenaltyRuntime.GetReductionPercent()==15 && FriendlyEncounterPenaltyRuntime.GetRecruitmentReductionPercent()==15,"pre-hit friendly Rogue counts once after native retaliation and alliance revocation");
+        FriendlyEncounterPenaltyRuntime.ReloadAsync().GetAwaiter().GetResult();
+        Check(FriendlyEncounterPenaltyRuntime.GetRecruitmentReductionPercent()==15 && RequestHandler.State.Entries.Single().AffectsRecruitment,"Rogue-specific recruitment tag survives acknowledgement/reload");
+        Reset();var suspended=new Player{ProfileId="suspended-rogue",Side=EPlayerSide.Savage};suspended.Profile.Info.Settings.Role=WildSpawnType.exUsec;
+        GameplayModeAddons.RogueFriend=false;pitTeam.Patches.KillBoundary.Hit(suspended,Human);
+        GameplayModeAddons.RogueFriend=true;pitTeam.Patches.KillBoundary.Record(suspended,Human);GameplayModeRuntime.WaitReports();
+        Check(RequestHandler.Posts.Count==0,"suspended alliance at first hit is not a friendly kill even before native enemy admission");
+        foreach(bool selected in new[]{false,true}) {
+            Reset();var hostile=new Player{ProfileId="hostile-rogue-"+selected,Side=EPlayerSide.Savage};hostile.Profile.Info.Settings.Role=WildSpawnType.exUsec;
+            hostile.AIData.BotOwner.BotsGroup.Enemy=true;hostile.AIData.BotOwner.SelectedFriendly=selected;
+            pitTeam.Patches.KillBoundary.Hit(hostile,Human);
+            hostile.AIData.BotOwner.BotsGroup.Enemy=false;hostile.AIData.BotOwner.SelectedFriendly=true;
+            pitTeam.Patches.KillBoundary.Hit(hostile,Human);pitTeam.Patches.KillBoundary.Record(hostile,Human);GameplayModeRuntime.WaitReports();
+            Check(RequestHandler.Posts.Count==0,"first-hit hostile Rogue never becomes a friendly penalty after relationship changes");
+        }
+        Reset();pitTeam.Patches.KillBoundary.Record(Recruit("ordinary-pmc-recruit"),Human);GameplayModeRuntime.WaitReports();
+        Check(FriendlyEncounterPenaltyRuntime.GetReductionPercent()==15 && FriendlyEncounterPenaltyRuntime.GetRecruitmentReductionPercent()==0,"ordinary recruit penalty does not reduce Rogue acceptance");
         Reset();GameplayModeRuntime.IsAllegiance=false;pitTeam.Patches.KillBoundary.Record(Recruit("hired-mode"),Human);GameplayModeRuntime.WaitReports();
         Check(RequestHandler.Posts.Count==0 && FriendlyEncounterPenaltyRuntime.GetReductionPercent()==0,"Guns for Hire is excluded");
         Reset();RequestHandler.LoseResponse=true;pitTeam.Patches.KillBoundary.Record(Recruit("retry"),Human);GameplayModeRuntime.WaitReports();
@@ -142,6 +189,8 @@ public static class PenaltyChecks {
         Check(FriendlyEncounterPenaltyPolicy.GetCountdown(expiry,expiry,out _,out _) == "","expired countdown disappears");
         var ledger=new[]{new FriendlyEncounterPenaltyEntry{ExpiresAtUnixMs=expiry},new FriendlyEncounterPenaltyEntry{ExpiresAtUnixMs=expiry+hour}};
         Check(FriendlyEncounterPenaltyPolicy.GetReductionPercent(ledger,expiry-1)==30 && FriendlyEncounterPenaltyPolicy.GetReductionPercent(ledger,expiry)==15 && FriendlyEncounterPenaltyPolicy.GetReductionPercent(ledger,expiry+hour)==0,"penalties expire independently at exact real times");
+        ledger[0].AffectsRecruitment=true;
+        Check(FriendlyEncounterPenaltyPolicy.GetRecruitmentReductionPercent(ledger,expiry-1)==15 && FriendlyEncounterPenaltyPolicy.GetRecruitmentReductionPercent(ledger,expiry)==0,"only tagged Rogue kills reduce acceptance and expire on the same clock");
         for(int kills=0;kills<=12;kills++) {
             var stacked=Enumerable.Range(0,kills).Select(i=>new FriendlyEncounterPenaltyEntry{Id=i.ToString(),ExpiresAtUnixMs=expiry}).ToArray();
             int reduction=FriendlyEncounterPenaltyPolicy.GetReductionPercent(stacked,expiry-1);

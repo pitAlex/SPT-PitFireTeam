@@ -63,6 +63,9 @@ internal static class Program
         LeadershipChecks.Run();
         OrderFreshnessChecks.Run();
         UnitTacticsChecks.Run();
+        MovementSuccessionChecks.Run();
+        ExUsecHierarchyChecks.Run();
+        RogueNativeSlotChecks.Run();
         Console.WriteLine($"PASS: {checks} production Knight coordination, shared push verdict and delegation checks; controlled EFT inputs.");
     }
 }
@@ -75,7 +78,7 @@ namespace UnityEngine
 namespace EFT
 {
     public enum EBotState { Active, Inactive }
-    public enum WildSpawnType { bossKnight, followerBigPipe, followerBirdEye, pmcUSEC }
+    public enum WildSpawnType { bossKnight, followerBigPipe, followerBirdEye, pmcUSEC, exUsec }
     public interface IPlayer { string ProfileId {get;} Vector3 Position {get;} }
     public class Health { public bool IsAlive = true; }
     public class Player : IPlayer { public string ProfileId {get;set;}=Guid.NewGuid().ToString();public Vector3 Position {get;set;} public Health HealthController = new(); public bool IsYourPlayer = true; public AIData AIData = new(); }
@@ -105,23 +108,27 @@ public class BossKnight
     public void SetFightPosition(bool good, BotOwner bot) { _shooterPosGood[bot.Id] = good; }
     public void UpdatePositions(bool force)
     {
-        if (!Publish) return;
+        if (!Publish || FollowersPositions.Count > 2) return;
         foreach (var bot in FollowersPositions.Keys.ToArray()) FollowersPositions[bot] = new Vector3(20 + bot.Id, 0, 0);
         OnPositionsRecalculated?.Invoke();
     }
 }
 namespace pitTeam.Components
 {
-    public class BossLogic { public bool IsHitted; }
+    public class BossLogic { public bool IsHitted, HasManualHelpRequest; }
     public class pitAIBossPlayer { public Player realPlayer = new();public BossLogic Logic=new();public BossLogic GetBossLogic()=>Logic; }
     public class BotFollowerPlayer
     {
+        public bool TeamSplitCombatActive;
+        public bool TryGetTeamSplitHelpEnemy(out BotOwner enemy) { enemy=null; return false; }
         public float? UnitAggression,UnitDetermination;public int DeathResets;public bool CommandOverride;
-        public BotOwner CompanionLeader;
-        public void SetCompanionCombatLeader(BotOwner leader)=>CompanionLeader=leader;
+        public float SelfDetermination=50f;
+        public BotOwner CompanionLeader;public bool CompanionLeaderControlsPosition;
+        public void SetCompanionCombatLeader(BotOwner leader)=>SetCompanionCombatLeader(leader,false);
+        public void SetCompanionCombatLeader(BotOwner leader,bool controlsPosition){CompanionLeader=leader;CompanionLeaderControlsPosition=leader!=null&&controlsPosition;}
         public bool Independent;
         public void SetCompanionCombatPreferences(float aggression,float determination){UnitAggression=aggression;UnitDetermination=determination;}
-        public void ClearCompanionCombatPreferences(){UnitAggression=UnitDetermination=null;CompanionLeader=null;}
+        public void ClearCompanionCombatPreferences(){UnitAggression=UnitDetermination=null;SetCompanionCombatLeader(null);}
         public void ResetCombatPercentageOverrides(string source){CommandOverride=false;if(source=="KnightDied")DeathResets++;}
         public BotOwner Bot; public pitAIBossPlayer Leader; public FollowerCommandType Command;
         public int PushEnemyIssueSequence;public bool HasOrderedPushCancelRequest, HasOrderedPushTargetLock, CombatRegroupUsesBossAnchor;
@@ -132,8 +139,8 @@ namespace pitTeam.Components
 namespace pitTeam.Modules
 {
     public enum GameplayMode {GoingRogue,Allegiance}
-    public static class GameplayModeAddons {public static GameplayMode Current=GameplayMode.GoingRogue;}
-    public enum FollowerCommandType { None, Regroup, PushEnemy }
+    public static class GameplayModeAddons {public static GameplayMode Current=GameplayMode.Allegiance;}
+    public enum FollowerCommandType { None, Regroup, PushEnemy, HoldPosition }
     public static class FollowerEnemyTracking {
         public static bool IsEligible(EnemyInfo enemy)=>enemy.Eligible;
         public static bool TryGetKnownPosition(EnemyInfo enemy,out Vector3 point,out string reason){point=enemy.Person?.Position ?? default;reason="";return enemy.Known;}
@@ -157,6 +164,6 @@ namespace pitTeam.BigBrain
 }
 namespace pitTeam.GoingRogue.Combat
 {
-    public static class GoonCombatLayer { public static HashSet<BotOwner> Owned=new(); public static bool IsOwned(BotOwner bot,string role)=>Owned.Contains(bot); }
+    public static class GoonCombatLayer { public static HashSet<BotOwner> Owned=new(); public static bool IsOwned(BotOwner bot,string role)=>Owned.Contains(bot)&&bot.Profile.Info.Settings.Role.ToString()==role; }
     public static class KnightCombatLayer { public static HashSet<BotOwner> Owned = new(); public static bool IsOwned(BotOwner bot) => Owned.Contains(bot) && !bot.IsDead; }
 }

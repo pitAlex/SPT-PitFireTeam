@@ -57,7 +57,7 @@ namespace pitTeam.Components
         SAINShooter = 4,
     }
 
-    public class BotFollowerPlayer
+    public partial class BotFollowerPlayer
     {
         protected BotOwner _bot;
         private readonly FollowerPostCombatDiagnostics postCombatDiagnostics = new FollowerPostCombatDiagnostics();
@@ -66,6 +66,8 @@ namespace pitTeam.Components
         protected BotSettingsInGameModif settingModif;
 
         protected bool _IsSquadMate = false;
+        // Deployment origin, separate from squadmate loot and command permissions.
+        public bool IsRosterMember { get; protected set; }
         protected bool UsesSavedCombatPreferences { get; set; }
         // Saved boss allies retain progression without acquiring squadmate loot/command privileges.
         internal bool HasPersistentProgress => IsSquadMate || UsesSavedCombatPreferences;
@@ -226,9 +228,9 @@ namespace pitTeam.Components
             get => UsesSavedCombatPreferences ? _selfDetermination : 50f;
             set => _selfDetermination = pitTeam.Shared.SelfDeterminationPolicy.Normalize(value);
         }
-        public float EffectiveSelfDetermination => _combatDeterminationOverride ?? _companionCombatDetermination ?? SelfDetermination;
+        public float EffectiveSelfDetermination => _combatDeterminationOverride ?? (TeamSplitCombatActive ? 100f : _companionCombatDetermination ?? SelfDetermination);
         public bool HasDeterminationOverride => _combatDeterminationOverride.HasValue;
-        public string DeterminationSource => !_combatDeterminationOverride.HasValue ? (_companionCombatDetermination.HasValue ? "companion" : UsesSavedCombatPreferences ? "saved" : "pickupBaseline")
+        public string DeterminationSource => !_combatDeterminationOverride.HasValue ? (TeamSplitCombatActive ? "teamSplit" : _companionCombatDetermination.HasValue ? "companion" : UsesSavedCombatPreferences ? "saved" : "pickupBaseline")
             : _combatDeterminationOverride.Value == 100f ? "OnYourOwn" : _combatDeterminationOverride.Value == 20f ? "CoverMe" : "command";
         public float BossInfluence => pitTeam.Shared.SelfDeterminationPolicy.BossInfluence(EffectiveSelfDetermination);
         public bool HasCombatPercentageOverrides => _combatDeterminationOverride.HasValue || _temporaryCombatAggressionOverrideActive;
@@ -255,11 +257,17 @@ namespace pitTeam.Components
         {
             _companionCombatAggression = null;
             _companionCombatDetermination = null;
-            CompanionCombatLeader = null;
+            SetCompanionCombatLeader(null);
         }
 
         public BotOwner? CompanionCombatLeader { get; private set; }
-        public void SetCompanionCombatLeader(BotOwner? leader) => CompanionCombatLeader = leader;
+        public bool CompanionLeaderControlsPosition { get; private set; }
+        public void SetCompanionCombatLeader(BotOwner? leader) => SetCompanionCombatLeader(leader, false);
+        public void SetCompanionCombatLeader(BotOwner? leader, bool controlsPosition)
+        {
+            CompanionCombatLeader = leader;
+            CompanionLeaderControlsPosition = leader != null && controlsPosition;
+        }
 
         public bool CombatIndependent
         {
@@ -296,7 +304,7 @@ namespace pitTeam.Components
                 UpdateTemporaryCombatAggressionClearDelay();
                 return _temporaryCombatAggressionOverrideActive
                     ? _temporaryCombatAggressionOverride
-                    : _companionCombatAggression ?? _combatAggression;
+                    : teamSplitAggression ?? _companionCombatAggression ?? _combatAggression;
             }
         }
 
@@ -387,6 +395,7 @@ namespace pitTeam.Components
             Proficiency = FollowerProficiency.DefaultValues.Clone();
 
             _IsSquadMate = isSquad;
+            IsRosterMember = isSquad;
             UsesSavedCombatPreferences = isSquad;
             CaptureInitialHolsterWeapon(finalAttempt: false);
 

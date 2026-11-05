@@ -43,7 +43,7 @@ namespace pitTeam.GoingRogue.Combat
                 owner.WeaponManager.Reload.Reloading, owner.Memory.IsInCover,
                 Time.time - owner.Memory.ComeToCoverTime, bossSettings.KILLA_HOLD_DELAY,
                 Time.time - groupReport);
-            if (choice != BigPipeFightChoice.Shoot && common.HasRecoveryPressure(1f))
+            if (choice != BigPipeFightChoice.Shoot && GoonAssaultPolicy.HasBlockingPressure(owner, common, enemy))
             {
                 if (common.TryGetCommittedRecoveryDecision(enemy, out var recovery)) return recovery;
                 return common.CreateNoCoverRecoveryDecision(enemy);
@@ -84,7 +84,7 @@ namespace pitTeam.GoingRogue.Combat
                 return suppress;
             }
 
-            if (common.HasRecoveryPressure(1f) || !FollowerCombatAnchor.IsCombatIndependent(owner) &&
+            if (GoonAssaultPolicy.HasBlockingPressure(owner, common, enemy) || !FollowerCombatAnchor.IsCombatIndependent(owner) &&
                 (Enemy.Distance(enemy) >= Enemy.EnemyDistance.Far || !GoonCombatThreat.IsLowThreat(owner, enemy, common)))
             {
                 if (common.TryGetCommittedRecoveryDecision(enemy, out var recovery)) return recovery;
@@ -111,7 +111,7 @@ namespace pitTeam.GoingRogue.Combat
                 return new AICoreActionEnd("bigPipe.searchRetry", Time.time >= RetryUntil || enemy.IsVisible && enemy.CanShoot);
             if (current.Action == BotLogicDecision.holdPosition)
                 return new AICoreActionEnd("bigPipe.holdReady", Time.time >= RetryUntil ||
-                    common.HasRecoveryPressure(1f) || enemy.IsVisible && enemy.CanShoot && !owner.WeaponManager.Reload.Reloading);
+                    GoonAssaultPolicy.HasBlockingPressure(owner, common, enemy) || enemy.IsVisible && enemy.CanShoot && !owner.WeaponManager.Reload.Reloading);
             return common.ShallEndCurrentDecision(current);
         }
 

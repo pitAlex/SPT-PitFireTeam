@@ -21,8 +21,8 @@ namespace pitTeam.GoingRogue.Combat
             // The old Knight layer gated autonomous pursuit on distance and local threat.
             // Boss-relative ordinary-target confidence retains that distance/pressure gate.
             // Explicit Push has a separate objective and does not pass through this adapter.
-            bool safeAdvance = !common.HasRecoveryPressure(1f) &&
-                (FollowerCombatAnchor.IsCombatIndependent(_owner) ||
+            bool safeAdvance = !GoonAssaultPolicy.HasBlockingPressure(_owner, common, enemy) &&
+                (FollowerCombatAnchor.IsCombatIndependent(_owner) || GoonAssaultPolicy.CanAssault(_owner, common, enemy) ||
                  Enemy.Distance(enemy) < Enemy.EnemyDistance.Far && GoonCombatThreat.IsLowThreat(_owner, enemy, common));
             if (pursuit && safeAdvance) return false;
 

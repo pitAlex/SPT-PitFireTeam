@@ -100,11 +100,13 @@ namespace pitTeam.Patches
                     });
                 }
 
-                else if (item.gameObject.name == "TEAM STATUS")
+                else if (item.gameObject.name == "TEAM STATUS" || item.gameObject.name == "COMMAND")
                 {
-                    List<CustomPhrases> statusPhrases = new List<CustomPhrases> { CustomPhrases.TeamStatus };
+                    List<CustomPhrases> customPhrases = item.gameObject.name == "COMMAND"
+                        ? new List<CustomPhrases> { CustomPhrases.TeamSplit, CustomPhrases.TeamCombine }
+                        : new List<CustomPhrases> { CustomPhrases.TeamStatus };
 
-                    statusPhrases.ForEach(phrase =>
+                    customPhrases.ForEach(phrase =>
                     {
                         GestureMenuItem @class = new GestureMenuItem();
                         @class.gesturesMenu_0 = __instance;
@@ -146,7 +148,9 @@ namespace pitTeam.Patches
                         EPhraseTrigger.CoverMe,
                         EPhraseTrigger.Stop,
                         //EPhraseTrigger.Silence,
-                        EPhraseTrigger.OnYourOwn
+                        EPhraseTrigger.OnYourOwn,
+                        (EPhraseTrigger)CustomPhrases.TeamSplit,
+                        (EPhraseTrigger)CustomPhrases.TeamCombine
                     ];
                 }
                 else if (localizationKey == "HELP")
@@ -570,6 +574,12 @@ namespace pitTeam.Patches
                 return false;
             }
 
+            if (index == (int)CustomPhrases.TeamSplit || index == (int)CustomPhrases.TeamCombine)
+            {
+                __result = GetGestureText(index == (int)CustomPhrases.TeamSplit ? "TeamSplit" : "TeamCombine");
+                return false;
+            }
+
             if (index == (int)(EPhraseTrigger)CustomPhrases.TeamStatus)
             {
                 __result = GetGestureText("TeamStatus");
@@ -624,6 +634,11 @@ namespace pitTeam.Patches
                 if (trigger == EPhraseTrigger.OnRepeatedContact)
                 {
                     __result = pitFireTeam.GetGestureText("OnRepeatedContact");
+                    return false;
+                }
+                else if (trigger == (EPhraseTrigger)CustomPhrases.TeamSplit || trigger == (EPhraseTrigger)CustomPhrases.TeamCombine)
+                {
+                    __result = pitFireTeam.GetGestureText(trigger == (EPhraseTrigger)CustomPhrases.TeamSplit ? "TeamSplit" : "TeamCombine");
                     return false;
                 }
                 else if (trigger == (EPhraseTrigger)CustomPhrases.TeamStatus)

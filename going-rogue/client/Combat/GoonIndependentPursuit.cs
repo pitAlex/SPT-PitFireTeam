@@ -23,7 +23,8 @@ internal sealed class GoonIndependentPursuit(BotOwner owner, FollowerCombatCommo
     {
         holdStarted = decision.Action == BotLogicDecision.holdPosition ? Time.time : -1f;
         holdReason = decision.Action == BotLogicDecision.holdPosition ? decision.Reason : null;
-        if (decision.Reason?.StartsWith(reason, System.StringComparison.Ordinal) != true) { EndSearch(); return; }
+        if (decision.Reason?.StartsWith(reason, System.StringComparison.Ordinal) != true &&
+            decision.Reason?.Contains(".autonomousAdvance") != true) { EndSearch(); return; }
         var enemy = owner.Memory.GoalEnemy;
         if (enemy?.ProfileId != searchEnemy) EndSearch();
         if (enemy != null) { searchEnemy = enemy.ProfileId; FollowerEnemyTracking.SearchTick(enemy); }
@@ -32,10 +33,11 @@ internal sealed class GoonIndependentPursuit(BotOwner owner, FollowerCombatCommo
     {
         point = default; decision = default;
         var enemy = owner.Memory.GoalEnemy;
-        if (!FollowerCombatAnchor.IsCombatIndependent(owner) || !common.HasActiveCombatEnemy(enemy) ||
+        bool independent = FollowerCombatAnchor.IsCombatIndependent(owner);
+        if ((!independent && !GoonAssaultPolicy.CanAssault(owner, common, enemy)) || !common.HasActiveCombatEnemy(enemy) ||
             enemy.IsVisible && enemy.CanShoot || common.HasActiveOrPendingHealWork() || owner.Medecine.Using ||
-            common.HasRecoveryPressure(1f) || common.HasImmediateExplosiveDanger() || owner.Memory.IsUnderFire ||
-            FollowerCombatCommon.WasHitRecently(owner, 0.75f) || common.IsTemporaryHoldPositionAggressionActive() ||
+            GoonAssaultPolicy.HasBlockingPressure(owner, common, enemy) || common.HasImmediateExplosiveDanger() ||
+            FollowerCombatCommon.WasHitRecently(owner, 1.5f) || common.IsFollowerCriticallyWounded() || common.IsTemporaryHoldPositionAggressionActive() ||
             owner.WeaponManager.Reload?.Reloading == true || !owner.WeaponManager.IsWeaponReady || !owner.WeaponManager.HaveBullets ||
             owner.WeaponManager.Selector?.IsChanging == true ||
             (owner.WeaponManager.ShootController as Player.FirearmController)?.IsInReloadOperation() == true ||
@@ -46,11 +48,15 @@ internal sealed class GoonIndependentPursuit(BotOwner owner, FollowerCombatCommo
             follower.TryPeekActiveCommand(out _, out _, out _)) return false;
         if (owner.Profile.Info.Settings.Role != WildSpawnType.bossKnight &&
             !GoonPushLeadership.CanAutonomousAdvance(owner, enemy)) return false;
-        string moveReason = reason;
-        if (FollowerEnemyTracking.Distance(enemy) > 60f && common.CanSprintForCombatMovement() && common.CanRunToEnemyNow())
+        if (GoonAssaultPolicy.HasPlayerHelp(owner)) return false;
+        string moveReason = independent ? reason : owner.Profile.Info.Settings.Role == WildSpawnType.bossKnight
+            ? "knight.autonomousAdvance" : "bigPipe.autonomousAdvance";
+        if (FollowerEnemyTracking.Distance(enemy) > 30f && common.CanSprintForCombatMovement() && common.CanRunToEnemyNow())
             moveReason += ".runToPoint";
+        else moveReason += ".walkToPoint";
         return common.TryPlanContactAdvanceDecision(enemy, stopDistance, moveReason, out point, out decision);
     }
+
     internal bool TryGetDecision(out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
     {
         if (!TryPlan(out var point, out decision)) return false;

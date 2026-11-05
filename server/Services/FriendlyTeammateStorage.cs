@@ -61,6 +61,26 @@ public class FriendlyTeammateStorage(FileUtil fileUtil, JsonUtil jsonUtil, ISptL
     public IReadOnlyDictionary<string, string> ReadModeProfiles(MongoId sessionId, string mode) =>
         GetDatabase(sessionId, mode).ReadProfiles();
 
+    public bool IsTeammateAddonAvailable(MongoId sessionId, int aid, string? role, string mode)
+    {
+        var database = GetDatabase(sessionId, mode);
+        string key = $"{aid}-settings.json";
+        var document = database.Read(key);
+        var settings = document == null ? new FriendlyTeammateSettings() : Deserialize<FriendlyTeammateSettings>(document, key);
+        // Backfill existing addon members while their owner is present. Do not infer
+        // an owner by nickname or discard the marker when its addon is removed.
+        string? required = FriendlyGameplayModeAddons.PolicyForRole(mode, role)?.AddonRequired;
+        if (string.IsNullOrWhiteSpace(settings.AddonRequired) && !string.IsNullOrWhiteSpace(required))
+        {
+            settings.AddonRequired = required;
+            database.WriteBatch(new Dictionary<string, string>
+            {
+                [key] = jsonUtil.Serialize(settings) ?? throw new InvalidDataException("Unable to serialize teammate addon requirement")
+            });
+        }
+        return FriendlyGameplayModeAddons.IsAddonAvailable(settings.AddonRequired);
+    }
+
     // Account-wide mod state lives in the canonical Guns for Hire database, independently
     // of the active roster. Explicit mode access never changes the global mode selection.
     public T? ReadSharedDocument<T>(MongoId sessionId, string name) where T : class =>

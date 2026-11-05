@@ -987,7 +987,7 @@ namespace pitTeam.Components
 
             ProfileTooltipHoverController tooltipHover = tooltipAreaObject.AddComponent<ProfileTooltipHoverController>();
             string tooltipKey = GameplayModeRuntime.IsSettingUnavailableInCurrentMode(entry)
-                ? GameplayModeRuntime.IsGoingRogue ? "SettingsUnavailableInGoingRogue" : GameplayModeRuntime.IsAllegiance ? "SettingsUnavailableInAllegiance" : "SettingsUnavailableInGunsForHire"
+                ? GameplayModeRuntime.IsAllegiance ? "SettingsUnavailableInAllegiance" : "SettingsUnavailableInGunsForHire"
                 : "SettingsUnavailableDuringRaid";
             tooltipHover.Configure(GetSocialUiText(tooltipKey));
         }

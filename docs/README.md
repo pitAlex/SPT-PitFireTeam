@@ -7,11 +7,10 @@ These documents describe pitFireTeam core and shared behavior. The optional SAIN
 | Document | Purpose |
 |---|---|
 | [Architecture](Architecture.md) | Client/server ownership, lifecycle invariants and source map |
+| [Release-test checklist](validation/Release-Test-2026-11-05.md) | Matching Release artifacts, package audit and live-test matrix |
 | [SPT compatibility](SPT-Compatibility.md) | Build/reference baseline and packaging boundaries |
-| [Version 1 validation](validation/Release-1.0.0.md) | Dated release cleanup evidence and outstanding live qualification |
-| [Core 1.1.0 release notes](releases/Release-1.1.0.md) | Player-facing Core changes, Field Upkeep, health and separate Goons-addon scope |
-| [Core 1.0.1 validation](validation/Release-1.0.1.md) | Field Upkeep restoration, persistence checks and deployment evidence |
-| [Core 1.1.0 validation](validation/Release-1.1.0.md) | Dated Core release, health, fixes and optional-addon compatibility evidence |
+| [Core 1.1.1 release notes](releases/Release-1.1.1.md) | Teammate reliability, roster UI and companion compatibility changes |
+| [Core 1.1.1 validation](validation/Release-1.1.1.md) | Version metadata, snapshot checks and build evidence |
 | [SAIN compatibility](SAIN-Compatibility.md) | Core integration with the external plugin, including deferred shot-safety investigation |
 | [Questing Bots compatibility](Questing-Bots-Compatibility.md) | Optional objective suspension and restoration across follower ownership |
 | [Localization](Localization.md) | Centralized text and locale maintenance |
@@ -26,6 +25,7 @@ These documents describe pitFireTeam core and shared behavior. The optional SAIN
 | [Allegiance](Allegiance.md) | Field recruitment, friendship rolls, locked settings, greetings and encounter penalties |
 | [Combat tactics](Combat-Tactics.md) | Core Rifleman/Marksman decisions, cover, push, healing, regroup and recording |
 | [Commands](Commands.md) | Shared inputs, peaceful execution, core combat orders and status rendering |
+| [Team Split validation](validation/Team-Split.md) | Going Rogue combat-only unit splitting, controlled checks and deployment evidence |
 | [Enemy Tracking](Enemy-Tracking.md) | Shared Simple/Realistic modes, remembered search and bounded contact lifetime |
 | [Looting](looting/Looting.md) | Commanded loot, filters, ownership and return bookkeeping |
 | [Friendly Scav cargo](looting/Friendly-Scav-Cargo.md) | PMC/player-Scav commanded cargo, living companion extraction and Fence returns |
@@ -35,6 +35,7 @@ These documents describe pitFireTeam core and shared behavior. The optional SAIN
 | [Suppression](Suppression.md) | Core player-facing suppression guide |
 | [Team Escape](Team-Escape.md) | Escape rolls, recovery, results and notifications |
 | [Raid kill results](Raid-Results.md) | Native victim rows grouped by saved teammate or allied boss, independent of boss squadmate classification |
+| [Quest assist](Quest-Assist.md) | Quest kill credit for deployed roster members, native requirements and separate Goon quest handling |
 | [PMC karma](PMC-Karma.md) | Independent friendly-kill, recruited extraction and peaceful Allegiance recovery rules |
 | [Fence karma](Fence-Karma.md) | Intentional friendly Scav kills, extraction standing and inspected native reputation values |
 
@@ -57,11 +58,11 @@ These documents describe pitFireTeam core and shared behavior. The optional SAIN
 
 - [Self-Determination](Self-Determination.md): saved combat dependence, command overrides, initial calibration and churn safeguards, with a separate addon adaptation.
 
-## Proposals and unfinished work
+## Addons and future work
 
-- [Going Rogue](../going-rogue/README.md): optional third mode, companion permissions and Knight/Big Pipe combat integration.
+- [Going Rogue](../going-rogue/README.md): optional Allegiance extension, companion permissions and Goon/Rogue combat integration.
 
-- [Core roadmap](../TASKS.md): retained product proposals and future work.
+- [Core roadmap](Roadmap.md): retained product proposals and future work.
 - [Addon roadmap](../addon/docs/Roadmap.md): addon-specific gaps and raid qualification.
 
 ## Maintenance

@@ -8,7 +8,7 @@ Each mode has a separate database under the server mod:
 
 - `Resources/teammates/<profileId>.db`: Guns for Hire
 - `Resources/teammates-allegiance/<profileId>.db`: Allegiance
-- `Resources/teammates-going-rogue/<profileId>.db`: Going Rogue
+- `Resources/teammates-going-rogue/<profileId>.db`: retired Going Rogue recovery data; the addon now uses Allegiance
 
 Open PowerShell in the utility folder. Replace the example paths with your own:
 

@@ -10,7 +10,7 @@ internal sealed class BirdEyeCombatObjective : FollowerCombatObjectiveBase
     internal BirdEyeCombatObjective(BotOwner owner, FollowerCombatCommon common) : base(owner, common)
     {
         positioning = new BirdEyeSniperPositioning(owner, common);
-        sniper = new FollowerCombatSniper(owner, common, positioning.GetDecision);
+        sniper = new FollowerCombatSniper(owner, common, positioning.GetDecision, positioning.HasGoonSupport);
     }
     public override void Reset() { positioning.Reset(); sniper.Reset(); }
     public override void Activate() { Reset(); CombatCommon.ClearInitialDecision(); }

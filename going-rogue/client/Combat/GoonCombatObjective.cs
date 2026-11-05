@@ -21,6 +21,7 @@ namespace pitTeam.GoingRogue.Combat
         private float coverBreakRetryAt;
         private string preparedEnemy;
         private readonly GoonIndependentPursuit independentPursuit;
+        private string advanceTarget;
 
         internal GoonCombatObjective(BotOwner owner, FollowerCombatCommon common, IGoonCombatSelector selector, string actorPrefix) : base(owner, common)
         {
@@ -33,6 +34,7 @@ namespace pitTeam.GoingRogue.Combat
 
         public override void Reset()
         {
+            advanceTarget = null;
             independentPursuit.Reset();
             GoonPushLeadership.ClearAutonomousIntent(BotOwner);
             vanilla.Dispose();
@@ -62,6 +64,7 @@ namespace pitTeam.GoingRogue.Combat
 
         public override void Deactivate()
         {
+            advanceTarget = null;
             independentPursuit.Reset();
             GoonPushLeadership.ClearAutonomousIntent(BotOwner);
             preparedSupport = null;
@@ -115,14 +118,16 @@ namespace pitTeam.GoingRogue.Combat
                 coverArrivedAt = -1f;
             }
 
-            if (TryHelpLeader(enemy, out var help)) return help;
+            if (GoonAssaultPolicy.HasPlayerHelp(BotOwner) && TryHelpLeader(enemy, out var orderedHelp)) return orderedHelp;
             if (TryKnightPosition(out var knightPosition)) return knightPosition;
             if (TryGetGroupSearchDecision(enemy, out var groupSearch)) return groupSearch;
-            if (TryRejoinLeader(enemy, out var rejoin)) return rejoin;
             if (CanSupport() && TryGetRoleSupportDecision(enemy, out var roleSupport)) return roleSupport;
-            if (TrySupport(out var assistance)) return assistance;
             if (CombatCommon.TryActivateFollowerGrenade(enemy, out grenade)) return grenade;
-            if (independentPursuit.TryGetDecision(out var pursuit)) return pursuit;
+            if (independentPursuit.TryGetDecision(out var assault)) return assault;
+            if (GoonAssaultPolicy.CanAssault(BotOwner, CombatCommon, enemy) &&
+                !GoonAssaultPolicy.HasBlockingPressure(BotOwner, CombatCommon, enemy)) return vanilla.GetDecision();
+            if (TryRejoinLeader(enemy, out var rejoin)) return rejoin;
+            if (TrySupport(out var assistance)) return assistance;
             return vanilla.GetDecision();
         }
 
@@ -143,7 +148,8 @@ namespace pitTeam.GoingRogue.Combat
             decision = default;
             // This is a fresh decision after committed work, never a distance interrupt.
             // A distant remembered enemy must not renew no-cover recovery indefinitely.
-            if (!CanSupport() || FollowerCombatAnchor.IsCombatIndependent(BotOwner) ||
+            var commander = GoonPushLeadership.FindCommandLeader(BotOwner);
+            if (commander == null || commander == BotOwner || !CanSupport() || !FollowerCombatAnchor.CanAutomaticallyRegroup(BotOwner) ||
                 enemy.IsVisible || enemy.CanShoot || CombatCommon.IsTemporaryHoldPositionAggressionActive() ||
                 BotOwner.WeaponManager.Reload?.Reloading == true || !BotOwner.WeaponManager.IsWeaponReady ||
                 BotOwner.WeaponManager.Selector?.IsChanging == true ||
@@ -169,11 +175,12 @@ namespace pitTeam.GoingRogue.Combat
         private bool TryHelpLeader(EnemyInfo enemy, out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         {
             decision = default;
-            if (FollowerCombatAnchor.IsCombatIndependent(BotOwner) || Time.time < helpRetryAt || BotOwner.Memory.IsUnderFire ||
+            if (!GoonAssaultPolicy.HasPlayerHelp(BotOwner) || Time.time < helpRetryAt || BotOwner.Memory.IsUnderFire ||
                 (enemy.IsVisible && enemy.CanShoot) ||
                 BotOwner.BotFollower?.BossToFollow is not pitAIBossPlayer boss ||
                 boss.GetBossLogic()?.IsHitted != true) return false;
-            var attacker = boss.ClosestEnemy();
+            var attacker = BossPlayers.Instance?.GetFollower(BotOwner) is { } member &&
+                member.TryGetTeamSplitHelpEnemy(out var requested) ? requested : boss.ClosestEnemy();
             if (attacker?.GetPlayer?.HealthController?.IsAlive != true ||
                 !CombatCommon.TryUseSupportGoalEnemy(attacker, prefix + "needHelp", out var threat) ||
                 !CombatCommon.HasActiveCombatEnemy(threat)) return false;
@@ -261,6 +268,7 @@ namespace pitTeam.GoingRogue.Combat
             if (current.Action == BotLogicDecision.holdPosition &&
                 current.Reason != prefix + "coverArrival" && current.Reason != prefix + "supportHold" &&
                 !FollowerCombatCommon.IsMedicalDecision(current) &&
+                !GoonAssaultPolicy.CanAssault(BotOwner, CombatCommon, BotOwner.Memory.GoalEnemy) &&
                 CombatCommon.HasCommittedHolderSettled(1f) && CanSupport() &&
                 (TryKnightPosition(out var next) || TrySupport(out next)))
             {
@@ -366,16 +374,31 @@ namespace pitTeam.GoingRogue.Combat
             if (CombatCommon.ShouldCommitMovementDecision(next, false)) CombatCommon.CommitMovement(next);
             else if (!CombatCommon.IsSameCommittedMovement(next)) CombatCommon.ClearCommittedMovement();
             CombatCommon.UpdateRecoveryNoCoverCommitment(next);
-            if (BotOwner.Profile.Info.Settings.Role == WildSpawnType.bossKnight)
+            if (BotOwner.Profile.Info.Settings.Role is WildSpawnType.bossKnight or WildSpawnType.followerBigPipe)
             {
                 var enemy = BotOwner.Memory.GoalEnemy;
                 bool pursuit = next.Reason?.StartsWith(prefix + "onYourOwn.pursuit", StringComparison.Ordinal) == true;
                 bool advances = pursuit || next.Action == BotLogicDecision.search || next.Action == BotLogicDecision.runToEnemy ||
-                    next.Action == BotLogicDecision.goToEnemy || next.Reason?.StartsWith("knight.cover.", StringComparison.Ordinal) == true;
+                    next.Action == BotLogicDecision.goToEnemy || next.Reason?.StartsWith("knight.cover.", StringComparison.Ordinal) == true ||
+                    next.Reason?.Contains(".autonomousAdvance") == true ||
+                    next.Reason?.StartsWith("bigPipe.cover.toSFC", StringComparison.Ordinal) == true ||
+                    next.Action == BotLogicDecision.goToPoint && next.Reason?.StartsWith("bigPipe.groupSearch", StringComparison.Ordinal) == true;
                 bool coveringFire = (next.Action == BotLogicDecision.shootFromPlace || next.Action == BotLogicDecision.shootFromCover) &&
                     enemy?.IsVisible == true && enemy.CanShoot;
-                GoonPushLeadership.PublishAutonomousIntent(BotOwner, enemy?.ProfileId, advances || coveringFire,
-                    searching: pursuit || next.Action == BotLogicDecision.search);
+                bool ordinaryArrival = next.Action == BotLogicDecision.holdPosition &&
+                    (next.Reason == prefix + "coverArrival" ||
+                     next.Reason == "committedPositionHold.tacticalPoint" || next.Reason == "committedCoverHold.tacticalPoint" ||
+                     next.Reason?.StartsWith("committedCoverHold." + prefix + "cover.", StringComparison.Ordinal) == true);
+                bool retainAdvance = ordinaryArrival && advanceTarget != null && advanceTarget == enemy?.ProfileId &&
+                    !CombatCommon.HasActiveOrPendingHealWork() && !GoonAssaultPolicy.HasBlockingPressure(BotOwner, CombatCommon, enemy) &&
+                    !CombatCommon.IsTemporaryHoldPositionAggressionActive() && !CombatCommon.HasImmediateExplosiveDanger() &&
+                    !GoonAssaultPolicy.HasPlayerHelp(BotOwner) &&
+                    BossPlayers.Instance?.GetFollower(BotOwner)?.TryPeekActiveCommand(out _, out _, out _) != true;
+                advanceTarget = advances || coveringFire || retainAdvance ? enemy?.ProfileId : null;
+                GoonPushLeadership.PublishAutonomousIntent(BotOwner, enemy?.ProfileId, advances || coveringFire || retainAdvance,
+                    searching: pursuit || next.Action == BotLogicDecision.search || retainAdvance ||
+                        next.Reason?.Contains(".autonomousAdvance") == true,
+                    allowHarassment: GoonAssaultPolicy.CanIgnoreHarassment(BotOwner, CombatCommon, enemy));
             }
         }
 

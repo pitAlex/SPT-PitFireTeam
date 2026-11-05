@@ -9,6 +9,7 @@ $runSource = Get-Content -Raw (Join-Path $actionRoot 'CombatRunToEnemyAction.cs'
 $walkSource = Get-Content -Raw (Join-Path $actionRoot 'CombatGoToEnemyAction.cs')
 $holdSource = Get-Content -Raw (Join-Path $actionRoot 'CombatHoldPositionAction.cs')
 $dogSource = Get-Content -Raw (Join-Path $actionRoot 'CombatDogFightAction.cs')
+$pointSource = Get-Content -Raw (Join-Path $actionRoot 'CombatGoToPointAction.cs')
 $commonSource = Get-Content -Raw (Join-Path $RepositoryRoot 'client/BigBrain/FollowerCombatCommon.cs')
 function Get-CombatMethod([string]$Source, [string]$Name) {
     $pattern = '(?ms)^        (?:public|private|internal)[^\r\n]*\b' + [regex]::Escape($Name) + '\(.*?^        \}'
@@ -35,6 +36,7 @@ $harness = @'
 #pragma warning disable CS0649, CS0414, CS8600
 using System;
 using System.Collections;
+using DrakiaXYZ.BigBrain.Brains;
 using EFT;
 using pitTeam.Modules;
 using pitTeam.Utils;
@@ -73,6 +75,9 @@ namespace UnityEngine.AI {
         public static bool SamplePosition(Vector3 p,out NavMeshHit h,float radius,int areas){h=new NavMeshHit{position=Sample};return Success;}
     }
 }
+namespace DrakiaXYZ.BigBrain.Brains {
+    public class CustomLayer { public class ActionData {public string? Reason;} }
+}
 namespace EFT {
     public enum BotDogFightStatus {none,dogFight}
     public class DogState {public BotDogFightStatus DogFightState=BotDogFightStatus.dogFight;public bool _pursuitInProgress=true;}
@@ -87,7 +92,11 @@ namespace EFT {
     public class Health { public bool IsAlive=true; }
     public class Transform { public Vector3 position,forward=new Vector3(1,0,0); }
     public class GroupInfo { public float EnemyLastSeenTimeReal,EnemyLastSeenTimeSense; }
-    public class Mover { public bool HasPathAndNoComplete=true,Sprinting,Stopped; public Vector3 DirCurPoint; public Vector3? TargetPoint=new Vector3(190,0,-36); public void Stop(){Stopped=true;HasPathAndNoComplete=false;} }
+    public enum EBotMoverState { Moving, NearDoor }
+    public class Door { public bool Interacting,HaveDoorToOpen; }
+    public class MovementContext { public bool IsInPronePose; }
+    public class PointPlayer {public MovementContext MovementContext=new MovementContext();}
+    public class Mover { public EBotMoverState CurrentState; public bool HasPathAndNoComplete=true,Sprinting,Stopped; public Vector3 DirCurPoint; public Vector3? TargetPoint=new Vector3(190,0,-36); public void Stop(){Stopped=true;HasPathAndNoComplete=false;} }
     public class LookData { public void SetLookPointByHearing(object? p){} }
     public class Observer { public void Stop(){} }
     public class Memory { public Observer botObserveData=new Observer(); public EnemyInfo? GoalEnemy,LastEnemy; }
@@ -99,13 +108,25 @@ namespace EFT {
     }
     public class BotsGroup { public BotOwner[] Members=Array.Empty<BotOwner>(); public IEnumerable? Allies; public int MembersCount=>Members.Length; public BotOwner Member(int i)=>Members[i]; }
     public class BotOwner {
+        public Door DoorOpener=new Door(); public PointPlayer GetPlayer=new PointPlayer();
+        public Vector3 NativePointLook=Vector3.forward;public bool NativePointSprint;public int PointUpdates;
         public DogState DogFight=new DogState();
         public bool IsDead,IsFollower=true; public BotsGroup? BotsGroup;
         public Transform? WeaponRoot; public Transform Transform=new Transform();
         public Vector3 Position=new Vector3(160,0,-24),LookDirection=new Vector3(1,0,0);
         public Mover Mover=new Mover(); public Steering Steering=new Steering(); public Memory Memory=new Memory();
         public LookData LookData=new LookData(); public bool Stopped;
-        public void StopMove(){Stopped=true;Mover.HasPathAndNoComplete=false;} public void SetPose(float p){}
+        public void StopMove(){Stopped=true;Mover.HasPathAndNoComplete=false;} public void SetPose(float p){} public void SetTargetMoveSpeed(float speed){}
+    }
+    public class CoreActionResultParams {}
+    public class CoreActionResultGoToPoint:CoreActionResultParams {}
+    public class GoToSomePoint {
+        private BotOwner owner;public GoToSomePoint(BotOwner bot){owner=bot;}
+        public void UpdateNodeByBrain(CoreActionResultGoToPoint? data){
+            owner.PointUpdates++;owner.Mover.Sprinting=owner.NativePointSprint;
+            if(owner.Memory.GoalEnemy is {IsVisible:true,Distance:<10f} enemy)owner.Steering.LookToPoint(enemy.GetBodyPartPosition());
+            else owner.Steering.LookToDirection(owner.NativePointLook);
+        }
     }
 }
 namespace pitTeam.Modules {
@@ -141,6 +162,13 @@ namespace pitTeam.BigBrain {
     }
 }
 namespace pitTeam.BigBrain.Actions {
+    public class FollowerCombatActionBase {
+        protected BotOwner BotOwner;public FollowerCombatActionBase(BotOwner bot){BotOwner=bot;}
+        public virtual void Update(DrakiaXYZ.BigBrain.Brains.CustomLayer.ActionData data){}
+        protected void SetCombatSprint(bool value){BotOwner.Mover.Sprinting=value;}
+        protected T? GetData<T>(DrakiaXYZ.BigBrain.Brains.CustomLayer.ActionData data) where T:class=>null;
+        protected static string? GetReason(DrakiaXYZ.BigBrain.Brains.CustomLayer.ActionData data)=>data.Reason;
+    }
     public class RunHarness {
         __RUN_CONSTANTS__
         __LOOK_ENUM__
@@ -298,6 +326,27 @@ namespace pitTeam.BigBrain.Actions {
             originBot.LookDirection=new Vector3(1,20,0);originBot.Mover.HasPathAndNoComplete=false;
             CombatAttackMoveLook.LookAlongMovementOrLevel(originBot);
             Check(Math.Abs(originBot.Steering.Point.y)<0.00001f,"NoPath_LevelsPreviousSkyLook");
+            __POINT_SLOWDOWN_CASES__
+            foreach(bool interacting in new[]{false,true}){
+                var doorBot=new BotOwner();doorBot.DoorOpener.HaveDoorToOpen=true;doorBot.DoorOpener.Interacting=interacting;
+                doorBot.Mover.CurrentState=interacting?EBotMoverState.Moving:EBotMoverState.NearDoor;
+                doorBot.NativePointLook=new Vector3(1,0,0);doorBot.Mover.DirCurPoint=new Vector3(-1,0,0);
+                new CombatGoToPointAction(doorBot).Update(new DrakiaXYZ.BigBrain.Brains.CustomLayer.ActionData());
+                Check(Same(doorBot.Steering.Point,doorBot.NativePointLook),"PointMove_ActiveDoorFacingPreserved_"+interacting);
+            }
+            var pointBot=new BotOwner();pointBot.Mover.DirCurPoint=new Vector3(-1,0,0);pointBot.Memory.GoalEnemy=Enemy();
+            pointBot.Memory.GoalEnemy.IsVisible=true;pointBot.Memory.GoalEnemy.Distance=5f;
+            new CombatGoToPointAction(pointBot).Update(new DrakiaXYZ.BigBrain.Brains.CustomLayer.ActionData());
+            Check(pointBot.Steering.Mode=="point"&&Same(pointBot.Steering.Point,pointBot.Memory.GoalEnemy.GetBodyPartPosition()),"PointMove_CloseVisibleEnemyRetainsNativeLook");
+            pointBot.Memory.GoalEnemy.IsVisible=false;
+            new CombatGoToPointAction(pointBot).Update(new DrakiaXYZ.BigBrain.Brains.CustomLayer.ActionData());
+            Check(Same(pointBot.Steering.Point,new Vector3(-1,0,0)),"PointMove_UnseenEnemyDoesNotOwnHiddenBodyLook");
+            pointBot.Memory.GoalEnemy=null;pointBot.Mover.CurrentState=EBotMoverState.NearDoor;pointBot.DoorOpener.HaveDoorToOpen=false;
+            new CombatGoToPointAction(pointBot).Update(new DrakiaXYZ.BigBrain.Brains.CustomLayer.ActionData());
+            Check(Same(pointBot.Steering.Point,new Vector3(-1,0,0)),"PointMove_StaleDoorStateDoesNotBlockRouteFacing");
+            pointBot.Mover.HasPathAndNoComplete=false;pointBot.LookDirection=new Vector3(-1,8,0);
+            new CombatGoToPointAction(pointBot).Update(new DrakiaXYZ.BigBrain.Brains.CustomLayer.ActionData());
+            Check(Same(pointBot.Steering.Point,new Vector3(-1,0,0)),"PointMove_NoPathKeepsLevelHeading");
             e=Enemy(5);e.CurrPosition=new Vector3(1000,2000,3000);
             Check(!CombatAttackMoveLook.TryGetCombatThreatLookPoint(originBot,e,out _),"Dogfight_DoesNotUseOldReportOrHiddenLiveTransform");
             pitTeam.Utils.FollowerAwareness.HasThreat=true;pitTeam.Utils.FollowerAwareness.Threat=new Vector3(90,1.2f,100);
@@ -433,8 +482,25 @@ foreach($case in $capturedCases){
     $caseIndex++
 }
 $harness=$harness.Replace('__RETAINED_HOLD_CASES__',($capturedCode -join "`n"))
+$slowdownCases = @(Get-Content -Raw (Join-Path $PSScriptRoot 'fixtures/combat/knight-point-slowdown-facing.json') | ConvertFrom-Json)
+$slowdownCode = @(); $slowdownIndex = 0
+foreach ($case in $slowdownCases) {
+    $sprintValue = if ($case.sprinting) {'true'} else {'false'}
+    $slowdownCode += @"
+            var slowdown$slowdownIndex=new BotOwner{Position=$(FacingVector $case.position),NativePointLook=$(FacingVector $case.wrongLookDirection),NativePointSprint=$sprintValue};
+            slowdown$slowdownIndex.Mover.DirCurPoint=$(FacingVector $case.target)-slowdown$slowdownIndex.Position;
+            var slowdownTarget$slowdownIndex=slowdown$slowdownIndex.Mover.TargetPoint=$(FacingVector $case.target);
+            new CombatGoToPointAction(slowdown$slowdownIndex).Update(new DrakiaXYZ.BigBrain.Brains.CustomLayer.ActionData{Reason="knight.onYourOwn.pursuit.runToPoint"});
+            Check(Same(slowdown$slowdownIndex.Steering.Point,CombatAttackMoveLook.GetMovementOrLevelDirection(slowdown$slowdownIndex)),"CapturedPointSlowdown_$slowdownIndex`_RouteFacingOverridesWrongNativeDirection");
+            Check(slowdown$slowdownIndex.PointUpdates==1&&slowdown$slowdownIndex.Mover.TargetPoint==slowdownTarget$slowdownIndex,"CapturedPointSlowdown_$slowdownIndex`_SingleNativeMovePreservesDestination");
+            Check(slowdown$slowdownIndex.Mover.Sprinting==$sprintValue,"CapturedPointSlowdown_$slowdownIndex`_NativeSprintSlowdownPreserved");
+"@
+    $slowdownIndex++
+}
+$harness=$harness.Replace('__POINT_SLOWDOWN_CASES__',($slowdownCode -join "`n"))
 $harness = $harness.Replace('__DOG_CONTACT__',$dogContact).Replace('__RUN_CONSTANTS__', ($runConstants -join "`n")).Replace('__LOOK_ENUM__', $lookEnum).
     Replace('__HOLD_CONSTANTS__', ($holdConstants -join "`n")).Replace('__RUN_METHODS__', ($runMethods -join "`n")).Replace('__WALK_METHODS__', ($walkMethods -join "`n")).Replace('__HOLD_METHODS__', ($holdMethods -join "`n")).Replace('__DOG_METHODS__', ($dogMethods -join "`n"))
-Add-Type -TypeDefinition ($harness + "`n" + $lookSource) -Language CSharp
+$pointSource = $pointSource -replace '(?m)^using [^;]+;\r?\n', ''
+Add-Type -TypeDefinition ($harness + "`n" + $lookSource + "`n" + $pointSource) -Language CSharp
 $count = [pitTeam.BigBrain.Actions.ThreatFacingChecks]::Run()
 Write-Output "Passed $count threat-facing boundary checks against production methods. In-game steering and navigation still require a raid test."

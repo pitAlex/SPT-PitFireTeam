@@ -47,6 +47,8 @@ namespace pitTeam.BigBrain
         private readonly FollowerCombatCommon combatCommon;
         private readonly FollowerCombatPush combatPush;
         private readonly FollowerCombatSupportPlanner supportPlanner;
+        private readonly Func<EnemyInfo, AICoreActionResult<BotLogicDecision, CoreActionResultParams>?> companionDecision;
+        private readonly Func<EnemyInfo, bool> companionAdvanceAllowed;
         private readonly CommittedCoverPhaseState shootCoverSettlePhase = new CommittedCoverPhaseState();
         private readonly CommittedCoverPhaseState coverIntentPhase = new CommittedCoverPhaseState();
 
@@ -95,11 +97,18 @@ namespace pitTeam.BigBrain
         }
 
         public FollowerCombatDefault(BotOwner botOwner, FollowerCombatCommon combatCommon)
+            : this(botOwner, combatCommon, null, null) { }
+
+        internal FollowerCombatDefault(BotOwner botOwner, FollowerCombatCommon combatCommon,
+            Func<EnemyInfo, AICoreActionResult<BotLogicDecision, CoreActionResultParams>?> companionDecision,
+            Func<EnemyInfo, bool> companionAdvanceAllowed)
         {
             this.botOwner = botOwner;
             this.combatCommon = combatCommon;
             this.combatPush = new FollowerCombatPush(botOwner, combatCommon);
             supportPlanner = new FollowerCombatSupportPlanner(botOwner, combatCommon);
+            this.companionDecision = companionDecision;
+            this.companionAdvanceAllowed = companionAdvanceAllowed;
         }
 
         /// <summary>
@@ -485,6 +494,9 @@ namespace pitTeam.BigBrain
             // Protector still shares this objective and retains its legacy low-aggression rule until
             // it receives a dedicated policy. Balanced Riflemen are owned by the centralized
             // autonomous engagement arbitration instead.
+            var companion = companionDecision?.Invoke(goalEnemy);
+            if (companion.HasValue) return companion.Value;
+
             if (TryGetProtectorLowAggressionRegroupDecision(goalEnemy, out AICoreActionResult<BotLogicDecision, CoreActionResultParams> lowAggressionRegroup))
             {
                 return lowAggressionRegroup;
@@ -976,6 +988,22 @@ namespace pitTeam.BigBrain
         /// <summary>
         /// Keeps decision end conditions local to the simplified combat state machine.
         /// </summary>
+        internal bool TryPrepareCompanionAdvanceStop(
+            AICoreActionResult<BotLogicDecision, CoreActionResultParams> current, string reason, out AICoreActionEnd end)
+        {
+            end = default;
+            var hold = new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(BotLogicDecision.holdPosition, reason);
+            if (!combatCommon.TryPrepareDecisionTransition(current, reason, hold)) return false;
+            combatPush.ClearCommittedPush(reason);
+            combatCommon.ClearCommittedMovement(reason);
+            combatCommon.ClearCommittedPosition(reason);
+            combatCommon.ClearCommittedCover(reason);
+            preparedAdvanceDecision = null;
+            combatCommon.HoldFor(1f);
+            end = new AICoreActionEnd(reason, true);
+            return true;
+        }
+
         public AICoreActionEnd ShallEndCurrentDecision(
             AICoreActionResult<BotLogicDecision, CoreActionResultParams> currentDecision)
         {
@@ -1148,7 +1176,7 @@ namespace pitTeam.BigBrain
             // If no immediate firing position exists, aggressive followers are allowed to close distance
             // while the enemy is still visible.
             if (!combatCommon.HasActiveOrPendingHealWork() &&
-                combatCommon.ShouldAdvance(goalEnemy) &&
+                ShouldAdvance(goalEnemy) &&
                 pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) <= CombatDistanceConfiguration.Instance.GetVisiblePushDistance())
             {
                 // Once local logic decides a visible enemy should be pushed, hand off to the old-plugin
@@ -1177,7 +1205,7 @@ namespace pitTeam.BigBrain
             }
 
             if (combatCommon.HasActiveOrPendingHealWork() ||
-                !combatCommon.ShouldAdvance(goalEnemy))
+                !ShouldAdvance(goalEnemy))
             {
                 return false;
             }
@@ -1283,7 +1311,7 @@ namespace pitTeam.BigBrain
                     return false;
                 }
 
-                if (!goalEnemy.IsVisible && combatCommon.ShouldAdvance(goalEnemy))
+                if (!goalEnemy.IsVisible && ShouldAdvance(goalEnemy))
                 {
                     shootCoverSettlePhase.Clear();
                     combatCommon.ClearCommittedCover();
@@ -1415,6 +1443,9 @@ namespace pitTeam.BigBrain
         /// Uses the restored old-plugin engage helper only after the current tree has already decided
         /// that a non-visible enemy should still be actively pushed.
         /// </summary>
+        private bool ShouldAdvance(EnemyInfo enemy)
+            => (companionAdvanceAllowed?.Invoke(enemy) ?? true) && combatCommon.ShouldAdvance(enemy);
+
         private bool TryGetAdvanceDecision(
             EnemyInfo goalEnemy,
             out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
@@ -1425,7 +1456,7 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
-            bool pushOrdered = combatCommon.ShouldAdvance(goalEnemy);
+            bool pushOrdered = ShouldAdvance(goalEnemy);
             if (!pushOrdered)
             {
                 return false;
@@ -1612,7 +1643,8 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
-            BotOwner? bossEnemy = boss.ClosestEnemy();
+            BotOwner? bossEnemy = BossPlayers.Instance?.GetFollower(botOwner) is { } member &&
+                member.TryGetTeamSplitHelpEnemy(out var requested) ? requested : boss.ClosestEnemy();
             if (bossEnemy == null || bossEnemy.GetPlayer?.HealthController?.IsAlive != true)
             {
                 return false;
@@ -2593,7 +2625,8 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
-            BotOwner? bossEnemy = boss.ClosestEnemy();
+            BotOwner? bossEnemy = BossPlayers.Instance?.GetFollower(botOwner) is { } member &&
+                member.TryGetTeamSplitHelpEnemy(out var requested) ? requested : boss.ClosestEnemy();
             if (bossEnemy?.GetPlayer?.HealthController?.IsAlive != true ||
                 string.IsNullOrEmpty(bossEnemy.ProfileId))
             {
@@ -2826,7 +2859,7 @@ namespace pitTeam.BigBrain
 
             MarkCoverIntentScanned();
             return goalEnemy.IsVisible ||
-                   combatCommon.ShouldAdvance(goalEnemy) ||
+                   ShouldAdvance(goalEnemy) ||
                    (pitTeam.Modules.FollowerEnemyTracking.Distance(goalEnemy) <= CombatDistanceConfiguration.Instance.GetClosePushDistance() &&
                     combatCommon.IsAutonomousEngagementLowThreat(goalEnemy));
         }
@@ -2868,7 +2901,8 @@ namespace pitTeam.BigBrain
                         return false;
                     }
 
-                    BotOwner? bossEnemy = boss.ClosestEnemy();
+                    BotOwner? bossEnemy = BossPlayers.Instance?.GetFollower(botOwner) is { } member &&
+                member.TryGetTeamSplitHelpEnemy(out var requested) ? requested : boss.ClosestEnemy();
                     if (bossEnemy == null || bossEnemy.GetPlayer?.HealthController?.IsAlive != true)
                     {
                         return false;

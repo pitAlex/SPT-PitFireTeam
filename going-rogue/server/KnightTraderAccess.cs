@@ -31,7 +31,7 @@ public sealed class KnightTraderAccess(
     internal static void Apply(PmcData profile, string mode)
     {
         if (profile.TradersInfo?.TryGetValue(KnightTraderCatalog.Id, out var info) == true)
-            info.Unlocked = mode == "GoingRogue" && profile.Info?.Level >= KnightTraderCatalog.UnlockLevel;
+            info.Unlocked = mode == "Allegiance" && profile.Info?.Level >= KnightTraderCatalog.UnlockLevel;
     }
 
     internal bool CanTrade(MongoId sessionId)

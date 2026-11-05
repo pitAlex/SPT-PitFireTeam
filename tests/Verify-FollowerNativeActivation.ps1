@@ -17,7 +17,7 @@ function Read-Method([string]$path,[string]$signature) {
     throw "Unterminated method: $signature"
 }
 $plugin=Get-Content -Raw (Join-Path $RepositoryRoot 'client/friendlyPlugin.cs')
-foreach($patch in @('FollowerHumanPatrolChooserPatch','FollowerNativeBrainActivationPatch')) {
+foreach($patch in @('FollowerHumanPatrolChooserPatch','FollowerNativeBrainActivationPatch','FollowerRogueStationaryInitializationPatch')) {
     if(!$plugin.Contains("new $patch().Enable();")){throw "Patch not enabled: $patch"}
 }
 Add-Type -Path (Join-Path $RepositoryRoot 'client/libs/Mono.Cecil.dll')
@@ -36,6 +36,20 @@ try {
         $_.Parameters[1].ParameterType.FullName -eq 'StandartBotBrain'
     })
     if($prefix.Count -ne 1){throw 'Installed SPT brain prefix signature changed'}
+    $stationary=@($game.GetType('BotStationaryWeaponData').Methods | Where-Object {
+        $_.Name -eq 'TryFindClosests' -and $_.ReturnType.FullName -eq 'System.Boolean' -and $_.Parameters.Count -eq 3 -and
+        $_.Parameters[0].ParameterType.FullName -eq 'UnityEngine.Vector3' -and $_.Parameters[1].ParameterType.FullName -eq 'System.Boolean' -and
+        $_.Parameters[2].IsOut -and $_.Parameters[2].ParameterType.FullName -eq 'StationaryWeaponLink&'
+    })
+    if($stationary.Count -ne 1){throw 'Installed Rogue stationary lookup signature changed'}
+    if(!($stationary[0].Body.Instructions | Where-Object {$_.Operand -is [Mono.Cecil.MethodReference] -and
+        $_.Operand.DeclaringType.FullName -eq 'BotVoxelesPersonalData' -and $_.Operand.Name -eq 'GetLastConnectionId'})) {
+        throw 'Installed stationary lookup no longer uses the verified connection-id boundary'
+    }
+    $rogueCtor=$game.GetType('ExUsecLayersStrategy').Methods | Where-Object {$_.IsConstructor -and !$_.IsStatic}
+    if(!($rogueCtor.Body.Instructions | Where-Object {$_.Operand -is [Mono.Cecil.MethodReference] -and $_.Operand.FullName -eq $stationary[0].FullName})) {
+        throw 'Installed Rogue strategy no longer probes stationary weapons during construction'
+    }
     $follow=$game.GetType('BotFollower').Methods | Where-Object Name -eq 'SetToFollow'
     if(!($follow.Body.Instructions | Where-Object {$_.Operand -is [Mono.Cecil.MethodReference] -and $_.Operand.FullName -eq $chooser[0].FullName})) {
         throw 'Installed native SetToFollow no longer uses the verified patrol chooser'
@@ -44,6 +58,9 @@ try {
 $fixture=Get-Content -Raw (Join-Path $PSScriptRoot 'FollowerNativeActivationFixture.cs')
 $fixture=$fixture.Replace('/*NATIVE_FOLLOW*/',(Read-Method (Join-Path $NativeSourceRoot 'BotFollower.cs') 'public virtual void SetToFollow('))
 $fixture=$fixture.Replace('/*NATIVE_CHOOSER*/',(Read-Method (Join-Path $NativeSourceRoot 'PatrollingData.cs') 'public static PatrolPointChooserBasic GetPointChooser('))
+$fixture=$fixture.Replace('/*NATIVE_CONNECTION_ID*/',(Read-Method (Join-Path $NativeSourceRoot 'BotVoxelesPersonalData.cs') 'public int GetLastConnectionId('))
+$fixture=$fixture.Replace('/*NATIVE_STATIONARY_LOOKUP*/',(Read-Method (Join-Path $NativeSourceRoot 'BotStationaryWeaponData.cs') 'public bool TryFindClosests('))
+$fixture="using UnityEngine;`n"+$fixture
 $sptSource=Join-Path $SptCustomSourceRoot 'Patches/CustomAiPatch.cs'
 $fixture=$fixture.Replace('/*SPT_PREFIX*/',(Read-Method $sptSource 'public static bool PatchPrefix('))
 $fixture=$fixture.Replace('/*SPT_POSTFIX*/',(Read-Method $sptSource 'public static void PatchPostFix('))

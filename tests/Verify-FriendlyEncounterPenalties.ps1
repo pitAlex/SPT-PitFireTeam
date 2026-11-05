@@ -12,11 +12,15 @@ New-Item -ItemType Directory -Path $temporary | Out-Null
 try {
     $source=Get-Content -Raw (Join-Path $RepositoryRoot 'client/Patches/PlayerPatch.cs')
     $fixture=Get-Content -Raw (Join-Path $RepositoryRoot 'tests/FriendlyEncounterPenaltyFixture.cs')
-    foreach($pair in @(@('RECORD','TryRecordPlayerKillMessage'),@('KIND','GetKillMessageKind'),@('TEXT','GetKillMessageText'))) {
-        $method=[regex]::Match($source,'(?ms)^        private static (?:void|string) '+$pair[1]+'\(.*?^        \}').Value
+    foreach($pair in @(@('RECORD','TryRecordPlayerKillMessage'),@('KIND','GetKillMessageKind'),@('TEXT','GetKillMessageText'),@('HIT','TryRememberFriendlyPmcBeforePlayerDamage'))) {
+        $method=[regex]::Match($source,'(?ms)^        (?:private|internal) static (?:void|string) '+$pair[1]+'\(.*?^        \}').Value
         if(!$method){throw ('Kill report extraction boundary changed: '+$pair[1])}
         $fixture=$fixture.Replace('__'+$pair[0]+'_METHOD__',$method)
     }
+    $early=Get-Content -Raw (Join-Path $RepositoryRoot 'client/Patches/AllegianceScavTrustDamagePatch.cs')
+    $earlyMethod=[regex]::Match($early,'(?ms)^        private static void PatchPrefix\(.*?^        \}').Value
+    if(!$earlyMethod){throw 'Early health-damage capture boundary changed'}
+    $fixture=$fixture.Replace('__EARLY_METHOD__',$earlyMethod.Replace('private static void PatchPrefix','public static void EarlyDamage'))
     Set-Content (Join-Path $temporary 'Fixture.cs') $fixture
     $exe=Join-Path $temporary 'Encounters.exe'
     $newtonsoft=Join-Path $RepositoryRoot 'client/libs4.1/Newtonsoft.Json.dll'

@@ -1909,7 +1909,7 @@ namespace pitTeam.Patches
             {
                 Utils.Utils.FlagSet("RaidTransit", true);
                 Utils.Utils.FlagSet("isBadGuy", GameplayModeRuntime.GetEffectiveValue(pitFireTeam.badGuy) ||
-                    (SpawnHelper.spawnMemberIdsBoss.Count > 0 && !GameplayModeRuntime.IsGoingRogue));
+                    (SpawnHelper.spawnMemberIdsBoss.Count > 0 && !GameplayModeRuntime.IsGoingRogueActive));
                 Utils.Utils.FlagSet("pitFireTeam", GameplayModeRuntime.GetEffectiveValue(pitFireTeam.pitFireTeamFLAG));
             }
 

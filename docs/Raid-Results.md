@@ -6,4 +6,6 @@ Follower registration and kill capture use the same eligibility. Death handling 
 
 `SessionResultKillListShowPatch` renders nonempty groups under each ally's nickname. Victims are deduplicated by identity, and both capture and result snapshots use independent copies. Recorded kills survive follower removal/death and map transit; a fresh raid resets the report. Existing dogtag-based victim identification remains in force.
 
-The report does not require the ally to become a saved squadmate or expose its hidden profile raid-statistics panel. Current checks and live UI limitations are recorded in [Core validation](validation/Release-1.1.0.md).
+The report does not require the ally to become a saved squadmate or expose its hidden profile raid-statistics panel. Current checks and live UI limitations are recorded in Core validation (historical notes retained in Git).
+
+[Quest assist](Quest-Assist.md) uses the separate `IsRosterMember` deployment-origin flag. Saved Goons share eligible ordinary quest kills within 80 metres without acquiring squadmate permissions. Temporary quest Goons retain only their dedicated quest-credit handling.

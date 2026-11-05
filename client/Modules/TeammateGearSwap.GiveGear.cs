@@ -76,7 +76,6 @@ namespace pitTeam.Modules
             _donationPlan.Diagnostic = message => DonationDiagnosticLine(message);
 #endif
             DonationDiagnosticSnapshot("beforePlan", FollowerEquipment, Donation);
-            DonationDiagnosticComparison("draftBaselineMismatch", "follower", _botBefore, () => Snapshot(FollowerEquipment));
             _planningDonation = true;
             try { _donationPlan.Build(); }
             finally { _planningDonation = false; }

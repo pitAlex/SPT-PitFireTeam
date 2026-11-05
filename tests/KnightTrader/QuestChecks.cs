@@ -33,6 +33,9 @@ internal static class QuestChecks
         MongoId session, Action<bool, string> check, Action<string> mode)
     {
         var definitions = KnightQuestModule.ReadQuests(json);
+        QuestWaitChecks.Run(definitions, check);
+        HostileQuestChecks.Run(json, templates, check);
+        RogueAllianceChecks.Run(json, settings, templates, check);
         var english = KnightQuestModule.ReadLocales(json)["en"];
         foreach (var row in new[] { ("67768ec3fa281ca31708b190", "Woods"), ("67768f38fa281ca31708b194", "Shoreline"), ("6776900dfa281ca31708b198", "Lighthouse") })
             check(english[row.Item1] == $"Eliminate 5 targets on {row.Item2} while teamed up with Knight", "original competition objective text restored: " + row.Item2);
@@ -47,7 +50,7 @@ internal static class QuestChecks
             questPlayer.Quests[0].Status=status;
             check(KnightQuestModule.CanJoinKnightRoster(questPlayer)==(status==QuestStatusEnum.Success),"only completed-and-handed-in competition unlocks permanent Knight: "+status);
         }
-        foreach(var unlock in new[]{(KnightQuestPolicy.BadgeBandit,(Func<BotBase,bool>)KnightQuestModule.CanJoinBigPipeRoster),(KnightQuestPolicy.AFavor,(Func<BotBase,bool>)KnightQuestModule.CanJoinBirdeyeRoster)})
+        foreach(var unlock in new[]{(KnightQuestPolicy.BadgeBandit,(Func<BotBase,bool>)KnightQuestModule.CanJoinBigPipeRoster)})
         {
             questPlayer.Quests[0].QId=new(unlock.Item1);
             foreach(var status in new[]{QuestStatusEnum.Started,QuestStatusEnum.AvailableForFinish,QuestStatusEnum.Success})
@@ -57,6 +60,14 @@ internal static class QuestChecks
                 check(unlock.Item2(questPlayer)==(status==QuestStatusEnum.Success && standing>=0.5),"legacy follower unlock uses its own quest success and standing: "+unlock.Item1+"/"+status+"/"+standing);
             }
         }
+        questPlayer.Quests[0].QId=new(KnightQuestPolicy.Competition);
+        foreach(var status in new[]{QuestStatusEnum.AvailableForStart,QuestStatusEnum.Started,QuestStatusEnum.AvailableForFinish,QuestStatusEnum.Success,QuestStatusEnum.Fail})
+        {
+            questPlayer.Quests[0].QId=new(KnightQuestPolicy.AFavor);
+            questPlayer.Quests[0].Status=status;
+            check(KnightQuestModule.CanJoinBirdeyeRoster(questPlayer)==(status==QuestStatusEnum.Success),"only handed-in Partizan hunt unlocks permanent Birdeye: "+status);
+        }
+        check(!KnightQuestModule.CanJoinBirdeyeRoster(new BotBase()),"missing Partizan hunt never grants Birdeye");
         questPlayer.Quests[0].QId=new(KnightQuestPolicy.Competition);
         questPlayer.Quests[0].Status=QuestStatusEnum.Started;
         check(!KnightQuestModule.CanJoinKnightRoster(new BotBase()),"missing quest progress never grants Knight");
@@ -93,11 +104,82 @@ internal static class QuestChecks
         questPlayer.Quests[0].CompletedConditions=null;
         foreach(var row in objectiveMaps)
             check(definitions[new(KnightQuestPolicy.Competition)].Conditions.AvailableForFinish!.Any(c=>c.Id.ToString()==row.Item2),"spawn completion mapping uses the native objective id for "+row.Item1);
-        check(definitions.Count == 3 && definitions.ContainsKey(new(KnightQuestPolicy.Competition)) && definitions.ContainsKey(new(KnightQuestPolicy.MyLand)) &&
-            definitions.ContainsKey(new(KnightQuestPolicy.Thieves)), "all three exact legacy quest IDs retained");
+        check(definitions.Count == 7 && definitions.ContainsKey(new(KnightQuestPolicy.Competition)) && definitions.ContainsKey(new(KnightQuestPolicy.MyLand)) &&
+            definitions.ContainsKey(new(KnightQuestPolicy.Thieves)) && definitions.ContainsKey(new(KnightQuestPolicy.BadgeBandit)) && definitions.ContainsKey(new(KnightQuestPolicy.EnemySpotted)) && definitions.ContainsKey(new(KnightQuestPolicy.OffLimits)), "all seven exact legacy quest IDs retained");
         var first = definitions[new(KnightQuestPolicy.Competition)];
         var second = definitions[new(KnightQuestPolicy.MyLand)];
         var third = definitions[new(KnightQuestPolicy.Thieves)];
+        var fourth = definitions[new(KnightQuestPolicy.BadgeBandit)];
+        var fifth = definitions[new(KnightQuestPolicy.EnemySpotted)];
+        var sixth = definitions[new(KnightQuestPolicy.OffLimits)];
+        var seventh = definitions[new(KnightQuestPolicy.AFavor)];
+        check(seventh.Image == KnightQuestPolicy.AFavorImage && seventh.Restartable && seventh.Conditions.AvailableForFinish!.Single().Value == 1 &&
+            json.Serialize(seventh.Conditions.AvailableForFinish)!.Contains("bossPartisan") && json.Serialize(seventh.Conditions.AvailableForFinish)!.Contains("Lighthouse") &&
+            !json.Serialize(seventh)!.Contains("bossKojaniy"), "Partizan replaces Shturman with explicit Lighthouse kill condition");
+        check(seventh.Conditions.AvailableForStart!.Single(c=>c.ConditionType=="Quest").AvailableAfter == 3600 &&
+            json.Serialize(seventh.Conditions.AvailableForStart)!.Contains(KnightQuestPolicy.OffLimits), "hunt retains one hour after Off Limits success");
+        check(english[KnightQuestPolicy.AFavorKills] == "Join BirdEye in hunting down Partisan on Lighthouse." &&
+            english[seventh.Description].StartsWith("Heard of Partizan?") &&
+            english[seventh.SuccessMessageText!].Contains("\n\nBirdEye has now join your team roster"), "hunt dialogue/objective and roster completion guidance");
+        questPlayer.Quests[0].QId=seventh.Id;
+        check(KnightQuestModule.CanSpawnBirdeye(questPlayer,"lighthouse") && !KnightQuestModule.CanSpawnBirdeye(questPlayer,"woods") &&
+            !KnightQuestModule.CanSpawnKnight(questPlayer,"lighthouse") && !KnightQuestModule.CanSpawnGoon(questPlayer,"lighthouse"), "Partizan hunt only authorizes Birdeye on Lighthouse");
+        questPlayer.Quests[0].CompletedConditions=[KnightQuestPolicy.AFavorKills];
+        check(!KnightQuestModule.CanSpawnBirdeye(questPlayer,"lighthouse"), "completed hunt does not automatically spawn Birdeye again");
+        questPlayer.Quests[0].CompletedConditions=null;
+
+        check(sixth.Image == KnightQuestPolicy.OffLimitsImage && sixth.Restartable && sixth.Conditions.AvailableForFinish!.Single().Value == 8 &&
+            json.Serialize(sixth.Conditions.AvailableForFinish)!.Contains(KnightQuestPolicy.PierZone), "Off Limits retains original pier zone, eight targets, artwork and restartability");
+        check(sixth.Conditions.Fail?.Count == 0, "Off Limits has no player exit-status failure conditions");
+        const string pierSurvival = "BirdEye and BigPipe must survive. The quest fails only if either of them dies.";
+        check(english[sixth.Description].EndsWith(pierSurvival) && english[sixth.Note!] == pierSurvival &&
+            english[KnightQuestPolicy.OffLimitsFailure] == pierSurvival, "Off Limits text consistently limits failure to either required Goon dying");
+        check(sixth.Conditions.AvailableForStart!.Single(c=>c.ConditionType=="Quest").AvailableAfter == 3600 &&
+            json.Serialize(sixth.Conditions.AvailableForStart)!.Contains(KnightQuestPolicy.EnemySpotted) &&
+            json.Serialize(sixth.Rewards)!.Contains("24000") && json.Serialize(sixth.Rewards)!.Contains("3000"), "Off Limits retains Enemy Spotted prerequisite, one hour, XP and USD rewards");
+        check(english[KnightQuestPolicy.OffLimitsKills] == "Eliminate 8 targets around the Pier in Shoreline while teamed up with BirdEye and BigPipe",
+            "original Off Limits objective text retained");
+        questPlayer.Quests[0].QId = sixth.Id;
+        check(KnightQuestModule.CanSpawnBirdeye(questPlayer,"shoreline") && KnightQuestModule.CanSpawnGoon(questPlayer,"shoreline") &&
+            !KnightQuestModule.CanSpawnKnight(questPlayer,"shoreline"), "Off Limits admits Pipe/Birdeye and cannot auto-deploy Knight");
+        check(!KnightQuestModule.CanSpawnGoon(questPlayer,"woods") && !KnightQuestModule.CanSpawnBirdeye(questPlayer,"woods"), "Off Limits cannot auto-deploy on another map");
+        questPlayer.Quests[0].CompletedConditions = [KnightQuestPolicy.OffLimitsKills];
+        check(!KnightQuestModule.CanSpawnGoon(questPlayer,"shoreline") && !KnightQuestModule.CanSpawnBirdeye(questPlayer,"shoreline"), "finished pier objective stops both automatic companions");
+        questPlayer.Quests[0].CompletedConditions = null;
+        check(fifth.Restartable && fifth.Image == KnightQuestPolicy.EnemySpottedImage && fifth.Conditions.AvailableForFinish!.Single().Value == 5 &&
+            json.Serialize(fifth.Conditions.AvailableForFinish)!.Contains("AnyPmc") && json.Serialize(fifth.Conditions.AvailableForFinish)!.Contains("Woods"),
+            "Enemy Spotted retains five PMC kills on Woods, image and restartability");
+        check(fifth.Conditions.AvailableForStart!.Single(c=>c.ConditionType=="Quest").AvailableAfter == 3600 &&
+            json.Serialize(fifth.Conditions.AvailableForStart)!.Contains(KnightQuestPolicy.BadgeBandit) &&
+            json.Serialize(fifth.Rewards)!.Contains("20000") && json.Serialize(fifth.Rewards)!.Contains("0.1"), "Enemy Spotted retains Badge Bandit prerequisite, one hour and rewards");
+        check(english[KnightQuestPolicy.EnemySpottedKills] == "Assist BirdEye in eliminating 5 PMCs on Woods" &&
+            english[fifth.Description].StartsWith("BirdEye here,"), "original Enemy Spotted dialogue and objective remain unchanged");
+        questPlayer.Quests[0].QId = fifth.Id;
+        check(KnightQuestModule.CanSpawnBirdeye(questPlayer,"woods") && !KnightQuestModule.CanSpawnKnight(questPlayer,"woods") &&
+            !KnightQuestModule.CanSpawnGoon(questPlayer,"woods"), "Enemy Spotted admits only Birdeye on Woods");
+        check(!KnightQuestModule.CanSpawnBirdeye(questPlayer,"shoreline"), "Enemy Spotted cannot deploy Birdeye on another map");
+        questPlayer.Quests[0].CompletedConditions = [KnightQuestPolicy.EnemySpottedKills];
+        check(!KnightQuestModule.CanSpawnBirdeye(questPlayer,"woods"), "completed fifth objective stops subsequent automatic Birdeye deployment");
+        questPlayer.Quests[0].CompletedConditions = null;
+        questPlayer.Quests[0].QId = new(KnightQuestPolicy.Competition);
+        check(fourth.Image == KnightQuestPolicy.BadgeBanditImage && fourth.Restartable, "Badge Bandit uses its original image and restartable flag");
+        var fourthPrerequisite = fourth.Conditions.AvailableForStart!.Single(c => c.ConditionType == "Quest");
+        check(fourthPrerequisite.AvailableAfter == 3600 && json.Serialize(fourthPrerequisite)!.Contains(KnightQuestPolicy.Thieves), "Badge Bandit unlocks one hour after native launcher-quest success");
+        check(fourth.Conditions.AvailableForFinish!.Single().Value == 1 && json.Serialize(fourth.Conditions.AvailableForFinish)!.Contains("bossKolontay"), "Badge Bandit requires native Kollontay kill role");
+        check(fourth.Conditions.Fail!.Count == 1 && json.Serialize(fourth.Conditions.Fail)!.Contains("TarkovStreets") && !json.Serialize(fourth.Conditions.Fail)!.Contains("Runner"), "original Streets KIA/Left/MIA failure conditions retained");
+        check(json.Serialize(fourth.Rewards)!.Contains("35000") && json.Serialize(fourth.Rewards)!.Contains("0.2"), "Badge Bandit retains XP and standing rewards");
+        check(english[fourth.Description].StartsWith("Kollontay was the one paying for Pipe’s launcher.") && english[fourth.Description].Contains("\n\n") &&
+            english[KnightQuestPolicy.BadgeBanditKills] == "Eliminate Kollontay on Streets of Tarkov while teamed up the Goons", "approved Badge Bandit description and original objective wording retained");
+        questPlayer.Quests[0].QId = fourth.Id;
+        check(KnightQuestModule.CanSpawnGoon(questPlayer, "tarkovstreets") && KnightQuestModule.CanSpawnKnight(questPlayer,"tarkovstreets"), "started Streets task authorizes all three temporary Goons");
+        check(!KnightQuestModule.CanSpawnGoon(questPlayer,"woods"), "Badge Bandit cannot deploy Goons on another map");
+        questPlayer.Quests.Add(new QuestStatus{QId=new(KnightQuestPolicy.Competition),Status=QuestStatusEnum.Started,StartTime=1,StatusTimers=[]});
+        check(KnightQuestModule.CanSpawnKnight(questPlayer,"woods") && !KnightQuestModule.CanSpawnGoon(questPlayer,"woods"),
+            "another open Knight objective cannot authorize Pipe or Birdeye outside their own quest map");
+        questPlayer.Quests.RemoveAt(1);
+        questPlayer.Quests[0].CompletedConditions = [KnightQuestPolicy.BadgeBanditKills];
+        check(!KnightQuestModule.CanSpawnGoon(questPlayer,"tarkovstreets"), "completed Kollontay objective prevents a later automatic Goon deployment");
+        questPlayer.Quests[0].CompletedConditions = null;
         questPlayer.Quests[0].QId = third.Id;
         check(!KnightQuestModule.CanSpawnKnight(questPlayer, "TarkovStreets") && !KnightQuestPolicy.UsesMap(KnightQuestPolicy.Thieves, "TarkovStreets"),
             "retrieval task never triggers a quest companion or proximity requirement");
@@ -138,11 +220,11 @@ internal static class QuestChecks
             modCache, new FastCloner());
         var baseLauncher = json.Serialize(templates.Items[new(KnightQuestItemCatalog.NativeLauncher)]);
         var module = new KnightQuestModule(service, templates, locales, new ImageRouter(new FileUtil(), images, null!), json,
-            access, settings, holder, DispatchProxy.Create<ISptLogger<KnightQuestModule>, TestLogger>(), customItems, globals);
+            access, settings, holder, DispatchProxy.Create<ISptLogger<KnightQuestModule>, TestLogger>(), customItems, globals, profiles);
         module.OnLoadAsync(CancellationToken.None).GetAwaiter().GetResult();
         try
         {
-            check(templates.Quests.Count == 3, "real native quest service registers all three tasks");
+            check(templates.Quests.Count == 7, "real native quest service registers all seven tasks");
             var launcher = templates.Items[new(KnightQuestPolicy.StolenLauncher)];
             check(launcher.Properties!.QuestItem == false && launcher.Properties.IsUngivable == true && launcher.Properties.IsUnbuyable == true &&
                 launcher.Properties.Width == 4 && launcher.Properties.Height == 1, "special launcher uses ordinary inventory placement while retaining transfer/purchase restrictions and size");
@@ -162,16 +244,22 @@ internal static class QuestChecks
             check(new ImageRouter(new FileUtil(), images, null!).CanHandle(imageRequest) &&
                 File.Exists(images.GetByKey("/files/quest/icon/knightmylandquest")), "native image routing resolves My Land stronghold artwork");
             check(images.GetByKey("/files/quest/icon/knightmylandquest") != images.GetByKey("/files/quest/icon/knightcompetitionquest"), "quest image routes resolve different files");
+            imageRequest.Request.Path = fourth.Image;
+            check(new ImageRouter(new FileUtil(), images, null!).CanHandle(imageRequest) && File.Exists(images.GetByKey("/files/quest/icon/knightrobocop")), "native route resolves Badge Bandit original artwork");
+            imageRequest.Request.Path = fifth.Image;
+            check(new ImageRouter(new FileUtil(), images, null!).CanHandle(imageRequest) && File.Exists(images.GetByKey("/files/quest/icon/knightbirdeye")), "native route resolves Enemy Spotted original artwork");
+            imageRequest.Request.Path = sixth.Image;
+            check(new ImageRouter(new FileUtil(), images, null!).CanHandle(imageRequest) && File.Exists(images.GetByKey("/files/quest/icon/knightcoverme")), "native route resolves Off Limits original artwork");
             imageRequest.Request.Path = third.Image;
             check(new ImageRouter(new FileUtil(), images, null!).CanHandle(imageRequest) && File.Exists(images.GetByKey("/files/quest/icon/knightthieves")), "native route resolves the third quest's original artwork");
             check(KnightQuestModule.ReadLocales(json)["en"][second.Description].Contains("we'll make it ours"), "deployed dialogue describes taking the stronghold");
             check(locales.Global["en"].Value![first.Name] == "Who let the dogs out?" && locales.Global["fr"].Value![first.Name] == "Who let the dogs out?", "quest locales use embedded English fallback");
             check(locales.Global["ru"].Value![first.Name] != "Who let the dogs out?", "existing Russian quest translation retained");
             try { module.OnLoadAsync(CancellationToken.None).GetAwaiter().GetResult(); throw new Exception("duplicate quests accepted"); }
-            catch (InvalidDataException) { check(templates.Quests.Count == 3, "duplicate preflight does not overwrite quest data"); }
+            catch (InvalidDataException) { check(templates.Quests.Count == 7, "duplicate preflight does not overwrite quest data"); }
 
             var questController = (QuestController)RuntimeHelpers.GetUninitializedObject(typeof(QuestController));
-            foreach (string selected in new[] { "Allegiance", "GunsForHire" })
+            foreach (string selected in new[] { "GunsForHire" })
             {
                 mode(selected);
                 output.Warnings = [];
@@ -196,11 +284,41 @@ internal static class QuestChecks
                 profile.Quests = definitions.Values.Select(q => new QuestStatus { QId = q.Id, StartTime = 1, Status = QuestStatusEnum.Started, StatusTimers = [] }).ToList();
                 var helperConstructor = typeof(QuestHelper).GetConstructors().Single();
                 var deps = new Dictionary<string, object?> { ["templateTable"] = templates, ["profileHelper"] = profiles,
-                    ["cloner"] = new FastCloner(), ["rewardHelper"] = RuntimeHelpers.GetUninitializedObject(typeof(RewardHelper)) };
+                    ["cloner"] = new FastCloner(), ["rewardHelper"] = RuntimeHelpers.GetUninitializedObject(typeof(RewardHelper)), ["timeUtil"] = new TimeUtil() };
                 var helper = (QuestHelper)helperConstructor.Invoke(helperConstructor.GetParameters().Select(p => deps.GetValueOrDefault(p.Name!)).ToArray());
-                check(helper.GetClientQuests(session).Count == 0 && profile.Quests.Count == 3, "native quest listing hides accepted tasks outside mode without deleting saved progress");
-                mode("GoingRogue");
-                check(helper.GetClientQuests(session).Count == 3, "native quest listing restores tasks on mode return");
+                check(helper.GetClientQuests(session).Count == 0 && profile.Quests.Count == 7, "native quest listing hides accepted tasks outside mode without deleting saved progress");
+                mode("Allegiance");
+                check(helper.GetClientQuests(session).Count == 7, "native quest listing restores tasks on mode return");
+                double success = DateTimeOffset.UtcNow.ToUnixTimeSeconds() - 7200;
+                profile.Quests = [new(){ QId = third.Id, Status = QuestStatusEnum.Success, StartTime = success - 100,
+                    StatusTimers = new(){[QuestStatusEnum.Success] = success} },
+                    new(){QId=first.Id,Status=QuestStatusEnum.Success,StartTime=1,StatusTimers=[]},
+                    new(){QId=second.Id,Status=QuestStatusEnum.Success,StartTime=1,StatusTimers=[]},
+                    new(){QId=new(KnightQuestPolicy.EnemySpotted),Status=QuestStatusEnum.Started,StartTime=1,StatusTimers=[]},
+                    new(){QId=new(KnightQuestPolicy.OffLimits),Status=QuestStatusEnum.Started,StartTime=1,StatusTimers=[]},
+                    new(){QId=new(KnightQuestPolicy.AFavor),Status=QuestStatusEnum.Started,StartTime=1,StatusTimers=[]}];
+                var fresh = helper.GetQuestReadyForProfile(profile, QuestStatusEnum.Started, new(){QuestId = fourth.Id});
+                check(fresh.Status == QuestStatusEnum.AvailableAfter && fresh.AvailableAfter > success + 7200,
+                    "installed native first-acceptance path reproduces the extra hour for an absent delayed quest");
+                // Before native profile serialization, create the same pending
+                // record that completing an already-installed prerequisite makes.
+                profiles.GetCompleteProfile(session);
+                var pending = profile.Quests.Single(q => q.QId == fourth.Id);
+                check(pending.Status == QuestStatusEnum.AvailableAfter && pending.AvailableAfter == success + 3600,
+                    "actual profile-read Harmony hook backfills a late-installed quest using prerequisite success time");
+                var accepted = helper.GetQuestReadyForProfile(profile, QuestStatusEnum.Started, new(){QuestId = fourth.Id});
+                check(accepted.Status == QuestStatusEnum.Started && accepted.AvailableAfter == null && accepted.StatusTimers.ContainsKey(QuestStatusEnum.Started),
+                    "real installed native acceptance starts the backfilled quest immediately without a second hour");
+                accepted.Status = QuestStatusEnum.AvailableAfter;
+                helper.ResetQuestState(profile, QuestStatusEnum.Started, fourth.Id);
+                check(accepted.Status == QuestStatusEnum.Started && accepted.StartTime > success &&
+                    accepted.CompletedConditions?.Count == 0, "native controller's existing-record acceptance path starts the same quest normally");
+                accepted.Status = QuestStatusEnum.AvailableAfter; accepted.AvailableAfter = success + 9000;
+                mode("GunsForHire"); helper.GetClientQuests(session);
+                check(accepted.AvailableAfter == success + 9000, "inactive-mode listing cannot repair or advance addon quest waits");
+                mode("Allegiance"); helper.GetClientQuests(session);
+                check(accepted.Status == QuestStatusEnum.AvailableAfter && accepted.AvailableAfter == success + 3600,
+                    "native quest-list hook repairs already affected waits without auto-starting the quest");
             }
             finally { profile.Quests = previous; }
         }

@@ -131,7 +131,9 @@ class Program
         Check(normalized[0]._id.ToString() == root, "nested-first snapshot locates the actual stash root");
         Check(saved.Select(item => item._id.ToString()).SequenceEqual(originalOrder), "normalization preserves input order");
         Check(normalized.Select(item => item._id.ToString()).Distinct().Count() == 3, "normalization preserves all items exactly once");
-        Check(ReferenceEquals(normalized, OtherPlayerProfileScreenPatch.Normalize(normalized, root)), "root-first normalization is unchanged");
+        Check(normalized.Select(item => item._id.ToString()).SequenceEqual(
+            OtherPlayerProfileScreenPatch.Normalize(normalized, root).Select(item => item._id.ToString())),
+            "root-first normalization preserves stash item identities and ordering");
         bool rejected = false;
         try { OtherPlayerProfileScreenPatch.Normalize(saved.Where(item => item._id.ToString() != root).ToArray(), root); }
         catch (InvalidOperationException) { rejected = true; }

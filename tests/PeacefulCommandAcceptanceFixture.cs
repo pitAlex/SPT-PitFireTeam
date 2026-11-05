@@ -44,6 +44,7 @@ static class Mathf { public static bool Approximately(float a, float b) => Math.
 class AIBossPlayer
 {
     public List<BotOwner> Followers = new List<BotOwner>();
+    private IEnumerable<BotOwner> CommandFollowers => Followers;
     const float PhraseCommandDistance = 35;
     public static bool AcceptRoll;
     public static int Rolls;

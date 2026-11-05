@@ -2,6 +2,10 @@ namespace pitTeam.Server.Models;
 
 public record FriendlyTeammateSettings
 {
+    // Persisted ownership: absent addons hide their teammates without deleting their data.
+    [System.Text.Json.Serialization.JsonPropertyName("addonRequired")]
+    public string? AddonRequired { get; set; }
+
     // Null means no recruitment debt (manual hires and legacy members).
     public int? RecruitmentGearPrice { get; set; }
 

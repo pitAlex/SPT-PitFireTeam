@@ -18,6 +18,9 @@ public class ControlBuildingLayer() : AICoreLayer<BotLogicDecision>("Enemy Build
 public class AssaultHaveEnemyLayer() : AICoreLayer<BotLogicDecision>("Enemy", 50) { }
 public class WarnPlayerLayer() : AICoreLayer<BotLogicDecision>("Warn", 75) { }
 public class PeacefulRequestLayer() : AICoreLayer<BotLogicDecision>("Peace", 30) { }
+public class ExUsecPeacefulRequestLayer() : AICoreLayer<BotLogicDecision>("RogueRequest", 80) { }
+public class GroupAttackLayer() : AICoreLayer<BotLogicDecision>("GroupAttack", 95) { }
+public class StationaryWithSuppressLayer() : AICoreLayer<BotLogicDecision>("Stationary", 75) { }
 public class BaseBrain
 {
     public string BrainName="BigPipe"; public string ShortName()=>BrainName;
@@ -31,7 +34,7 @@ public class BigPipeBotWeaponSelector : BotWeaponSelector { public void ManualUp
 namespace UnityEngine
 {
     public static class Time { public static float time; }
-    public static class Mathf { public static float Max(float a, float b) => Math.Max(a, b); public static float Clamp(float v,float min,float max)=>Math.Max(min,Math.Min(max,v)); }
+    public static class Mathf { public const float Deg2Rad=MathF.PI/180f;public static float Cos(float v)=>MathF.Cos(v);public static float Sin(float v)=>MathF.Sin(v);public static float Abs(float v)=>MathF.Abs(v);public static float Max(float a, float b) => Math.Max(a, b); public static float Clamp(float v,float min,float max)=>Math.Max(min,Math.Min(max,v)); }
     public struct Vector3(float x, float y, float z)
     {
         public float x = x, y = y, z = z;
@@ -41,6 +44,7 @@ namespace UnityEngine
         public static Vector3 operator *(Vector3 a, float b) => new(a.x*b,a.y*b,a.z*b);
         public static float Distance(Vector3 a,Vector3 b)=>MathF.Sqrt((a-b).sqrMagnitude);
         public Vector3 normalized {get {float m=MathF.Sqrt(sqrMagnitude);return new(x/m,y/m,z/m);}}
+        public void Normalize(){this=normalized;}
         public static Vector3 Lerp(Vector3 a,Vector3 b,float t)=>new(a.x+(b.x-a.x)*t,a.y+(b.y-a.y)*t,a.z+(b.z-a.z)*t);
     }
 }
@@ -48,11 +52,11 @@ namespace EFT
 {
     public class Health { public bool IsAlive = true; }
     public class MovementContext { public bool IsGrounded=true; }
-    public class Player { public MovementContext MovementContext=new(); public Health HealthController = new(); public bool IsYourPlayer=true; public Profile Profile=new(); public AIData AIData=new();
+    public class Player { public Vector3 Position; public MovementContext MovementContext=new(); public Health HealthController = new(); public bool IsYourPlayer=true; public Profile Profile=new(); public AIData AIData=new();
         public class FirearmController {public bool Reloading;public bool IsInReloadOperation()=>Reloading;}}
     public class AIData { public float PowerOfEquipment=100; public BotOwner BotOwner; }
     public enum EBotState { NonActive, Active, Disposed }
-    public enum WildSpawnType { followerBigPipe, bossKnight, assault, assaultGroup, cursedAssault, marksman, pmcUSEC, pmcBEAR, bossSanitar, followerBirdEye }
+    public enum WildSpawnType { followerBigPipe, bossKnight, assault, assaultGroup, cursedAssault, marksman, pmcUSEC, pmcBEAR, bossSanitar, followerBirdEye, exUsec }
     public class ProfileSettings { public WildSpawnType Role=WildSpawnType.followerBigPipe; }
     public class ProfileInfo { public ProfileSettings Settings=new(); }
     public class Profile { public ProfileInfo Info=new(); }
@@ -92,9 +96,14 @@ namespace pitTeam.Components
     public enum FollowerCommandType { None, PushEnemy, SuppressEnemy, NeedSniper, Regroup }
     public class BotFollowerPlayer
     {
+        public bool TeamSplitCombatActive;
+        public BotOwner SplitHelpEnemy;
+        public bool TryGetTeamSplitHelpEnemy(out BotOwner enemy) { enemy=SplitHelpEnemy; return enemy!=null; }
         public float? UnitAggression,UnitDetermination;
+        public float SelfDetermination=50f;
         public BotOwner CompanionLeader;
         public void SetCompanionCombatLeader(BotOwner leader)=>CompanionLeader=leader;
+        public void SetCompanionCombatLeader(BotOwner leader,bool controlsPosition)=>CompanionLeader=leader;
         public void SetCompanionCombatPreferences(float aggression,float determination){UnitAggression=aggression;UnitDetermination=determination;}
         public void ClearCompanionCombatPreferences(){UnitAggression=UnitDetermination=null;CompanionLeader=null;}
         public void ResetCombatPercentageOverrides(string source){}
@@ -106,6 +115,7 @@ namespace pitTeam.Components
         public void ClearCommand(string reason) { Command=FollowerCommandType.None;Cleared++; }
         public void ClearTemporaryCombatAggressionOverride(string reason) { AggressionCleared++; }
         public BotOwner GetBot()=>Owner; public pitAIBossPlayer GetBoss()=>Boss;
+        public bool IsBotActivelyEngaging(string id)=>Owner?.Memory.GoalEnemy?.ProfileId==id && Owner.Memory.GoalEnemy.IsVisible && Owner.Memory.GoalEnemy.CanShoot;
         public FollowerCommandType Command;
         public bool CombatRegroupUsesBossAnchor, SuppressEnemyUseAutomaticSecondary;
         public bool HasOrderedPushTargetLock;
@@ -114,13 +124,15 @@ namespace pitTeam.Components
         public bool TryPeekActiveCommand(out FollowerCommandType command, out Vector3 target, out float until)
         { until = 100; return TryGetActiveCommand(out command, out target); }
     }
-    public class BossLogic { public bool IsHitted; }
+    public class BossLogic { public bool IsHitted, HasManualHelpRequest; }
     public class pitAIBossPlayer
     {
         public static int CountKnownAdvanceEnemies(BotOwner owner,EnemyInfo enemy)=>owner.KnownEnemies;
         public Player realPlayer=new();
         public BossLogic Logic = new(); public BotOwner Attacker;
         public BossLogic GetBossLogic() => Logic; public BotOwner ClosestEnemy() => Attacker;
+        public string EngagedEnemy;
+        public bool IsPlayerEngaging(out string id,out Vector3 position){id=EngagedEnemy;position=default;return id!=null;}
     }
     public class CombatEvents
     {
@@ -131,9 +143,15 @@ namespace pitTeam.Components
 namespace pitTeam.Modules
 {
     public class CombatDistanceConfiguration {public static CombatDistanceConfiguration Instance=new();public bool IsUrbanDetourRegroup(float direct,float nav)=>false;public float GetBossRegroupTriggerDistance(BotOwner owner)=>35f;}
-    public static class FollowerCombatAnchor {public static bool Independent;public static bool IsCombatIndependent(BotOwner owner)=>Independent;}
+    public static class FollowerCombatAnchor
+    {
+        public static bool Independent,CompanionRegroup;
+        public static bool IsCombatIndependent(BotOwner owner)=>Independent;
+        // Leader validation and live anchor selection run against production in CompanionAnchors.
+        public static bool CanAutomaticallyRegroup(BotOwner owner)=>!Independent||CompanionRegroup;
+    }
     public static class BattleRecorder {public static void RecordObjectiveDiagnostic(BotOwner owner,string objective,string action,string reason,Func<object> details){} }
-    public static class FollowerAwareness { }
+    public static class FollowerAwareness { public static bool Damaged; public static bool WasRecentlyDamaged(BotOwner actor)=>Damaged; }
     public static class FollowerEnemyTracking
     { public static bool GroupSearching;
       public static void SearchTick(EnemyInfo enemy){GroupSearching=true;}
@@ -168,6 +186,7 @@ namespace pitTeam.BigBrain
         public bool ProbeInPush=>currentObjective==CombatObjectiveKind.OrderedPush;
         public FollowerCombatCommon ProbeCommon=>combatCommon;
         public virtual AICoreActionEnd ShallEndCurrentDecision(AICoreActionResult<BotLogicDecision,CoreActionResultParams> current)=>default;
+        public virtual void StartDecision()=>defaultObjective.StartDecision();
         protected abstract FollowerCombatObjectiveBase CreateDefaultObjective(BotOwner owner, FollowerCombatCommon common);
         protected abstract FollowerCombatObjectiveBase GetObjective();
         protected virtual bool ShouldConsumePushCommand(pitTeam.Components.BotFollowerPlayer follower, EnemyInfo enemy) => false;
@@ -189,13 +208,21 @@ namespace pitTeam.BigBrain
     }
     public class FollowerCombatCommon
     {
+        public bool HasTeamSplitHelpRequest;
+        public Func<EnemyInfo,bool> CompanionAdvanceOrder { get; set; }
+        public FollowerCombatCommon(){} public FollowerCombatCommon(BotOwner owner){}
         public static bool SupportedGround=true;
-        internal static bool HasSupportedCombatGround(Vector3 point)=>SupportedGround;
+        public static bool IsMovementDecision(AICoreActionResult<BotLogicDecision,CoreActionResultParams> decision)
+            =>decision.Action is BotLogicDecision.goToPoint or BotLogicDecision.goToEnemy or BotLogicDecision.runToEnemy or BotLogicDecision.runToCover or BotLogicDecision.attackMoving;
+        public static Func<Vector3,bool> GroundProbe;
+        internal static bool HasSupportedCombatGround(Vector3 point)=>SupportedGround&&(GroundProbe?.Invoke(point)??true);
         public const string HealRetryHoldReason = "healRetry";
         public void ClearInitialDecision() { }
         public Vector3 BossPosition;public float BossNavDistance;public bool RecentFight,HoldAggression;
         public bool IsTemporaryHoldPositionAggressionActive()=>HoldAggression;
         public Vector3 GetBossPosition()=>BossPosition;
+        public float Aggression = 1f;
+        public float GetAggression01()=>Aggression;
         public float GetBossNavDistance(Vector3 point)=>BossNavDistance;
         public static float GetSafeRegroupDistance(float nav,float direct)=>MathF.Max(nav,direct);
         public bool ShouldDeferAutonomousRegroupAfterRecentFight(EnemyInfo enemy,float distance,float trigger)=>RecentFight;
@@ -296,7 +323,8 @@ namespace pitTeam.BigBrain
         public AICoreActionResult<BotLogicDecision, CoreActionResultParams> CreateCommittedCoverMoveDecision() => D(BotLogicDecision.runToCover,"committedCover");
         public bool CanShootFromCurrentCover(out string reason) { reason = "lane"; return CoverShot; }
         public void ClearCommittedCover(string reason) { Cover=false; Calls.Add("clearCover"); }
-        public bool TryUseSupportGoalEnemy(BotOwner enemy, string reason, out EnemyInfo threat) { Calls.Add("admitLeaderThreat"); threat = Admission ? new() : null; return Admission; }
+        public EnemyInfo AdmittedThreat;
+        public bool TryUseSupportGoalEnemy(BotOwner enemy, string reason, out EnemyInfo threat) { Calls.Add("admitLeaderThreat"); threat = Admission ? AdmittedThreat ?? new() : null; return Admission; }
         public bool HasActiveCombatEnemy(EnemyInfo enemy = null) => enemy == null || enemy.Person.HealthController.IsAlive;
         public AICoreActionResult<BotLogicDecision, CoreActionResultParams>? TryGetImmediateShootDecision(string reason) => Immediate ? D(BotLogicDecision.shootFromPlace,reason) : null;
         public bool TryCreateSuppressFromPlaceDecision(EnemyInfo e, string r, out AICoreActionResult<BotLogicDecision, CoreActionResultParams> d, bool allowSoftObstructedSuppression) => Emit(Suppress,"leaderSuppress",BotLogicDecision.suppressFire,out d);
@@ -335,9 +363,14 @@ namespace pitTeam.BigBrain
         public static bool IsFinite(Vector3 p) => float.IsFinite(p.x) && float.IsFinite(p.y) && float.IsFinite(p.z);
         public bool TryCreateSupportFiringPositionDecision(EnemyInfo e, Vector3 anchor,string r,out AICoreActionResult<BotLogicDecision, CoreActionResultParams> d,bool preferBackline,bool enforceMarksmanPositionPolicy) => Emit(FiringPoint,"supportPosition",BotLogicDecision.attackMoving,out d);
         public bool AssignedBackline, AssignedSniper;
+        public Dictionary<string,EnemyInfo> Tracked=new();
+        public EnemyInfo GetTrackedEnemyByProfileId(string id)=>Tracked.TryGetValue(id,out var e)?e:null;
+        public bool SupportCommitAllowed=true; public string SupportTarget;
+        public bool TryCommitCompanionSupportPoint(EnemyInfo enemy,Vector3 point){Calls.Add("commitSupportPoint");if(!SupportCommitAllowed)return false;AssignedPoint=point;SupportTarget=enemy.ProfileId;return true;}
         public Vector3 AssignedPoint;
+        public Func<Vector3,(bool Valid,Vector3 Point)> AssignedPlanner;
         public bool TryPlanAssignedFiringPositionDecision(EnemyInfo e, Vector3 point,string r,out Vector3 position,out AICoreActionResult<BotLogicDecision,CoreActionResultParams> d,bool preferBackline,bool enforceMarksmanPositionPolicy)
-        { position=point;return TryCreateAssignedFiringPositionDecision(e,point,r,out d,preferBackline,enforceMarksmanPositionPolicy); }
+        { position=point;bool ok=TryCreateAssignedFiringPositionDecision(e,point,r,out d,preferBackline,enforceMarksmanPositionPolicy);d.Reason=r;if(AssignedPlanner!=null){var planned=AssignedPlanner(point);position=planned.Point;ok=planned.Valid;}return ok; }
         public void ClearCommittedPushDecision(string reason) { }
         public bool TryCreateAssignedFiringPositionDecision(EnemyInfo e, Vector3 point,string r,out AICoreActionResult<BotLogicDecision, CoreActionResultParams> d,bool preferBackline,bool enforceMarksmanPositionPolicy)
         { AssignedPoint=point;AssignedBackline=preferBackline;AssignedSniper=enforceMarksmanPositionPolicy;return Emit(FiringPoint,"assignedPosition",BotLogicDecision.goToPoint,out d); }
@@ -367,8 +400,18 @@ namespace pitTeam.GoingRogue.Combat
         public static void ClearAutonomousIntent(BotOwner owner) { IntentClears++;PublishedTarget=null; }
         public static bool GroupSearch; public static BotOwner SearchLeader=new(){Position=new Vector3(20,0,0)};
         public static bool TryGetSearchLeader(BotOwner member,EnemyInfo enemy,out BotOwner leader){leader=SearchLeader;return GroupSearch;}
-        public static void PublishAutonomousIntent(BotOwner owner,string target,bool advance,bool searching=false) { PublishedTarget=target;PublishedAdvance=advance; }
+        public static bool TryGetAdvanceLeader(BotOwner member,EnemyInfo enemy,out BotOwner leader){leader=SearchLeader;return GroupSearch;}
+        public static void PublishAutonomousIntent(BotOwner owner,string target,bool advance,bool searching=false,bool allowHarassment=false) { PublishedTarget=target;PublishedAdvance=advance; }
         public static bool CanAutonomousAdvance(BotOwner owner,EnemyInfo target)=>AdvanceAllowed;
+        public static HashSet<BotOwner> Advancing=new();
+        public static bool HasAutonomousAdvanceIntent(BotOwner actor,string target)=>Advancing.Contains(actor);
+        public static BotOwner Knight;
+        public static BotOwner FindKnight(BotOwner owner)=>Knight;
+        public static BotOwner FindCommandLeader(BotOwner owner)=>Knight;
+        public static bool TryGetAdvanceOrder(BotOwner leader,out EnemyInfo target,out int revision,out float publishedAt)
+        {target=leader.Memory.GoalEnemy;revision=1;publishedAt=Time.time;return false;}
+        public static bool CanSupersede(BotOwner member,string target,int revision,float publishedAt)=>false;
+        public static EnemyInfo KnownTarget(BotOwner owner,string target)=>owner.Memory.GoalEnemy;
     }
     public static class KnightCombatLayer { public const int LayerPriority = 76; }
     internal sealed partial class KnightVanillaCombat : IGoonCombatSelector

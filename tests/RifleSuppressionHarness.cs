@@ -80,6 +80,11 @@ namespace pitTeam.Modules {
         public static void RecordGrenadeEvent(BotOwner b,string eventName,string reason,EnemyInfo goalEnemy) {}
     }
 }
+namespace pitTeam.Utils {
+    public static class FollowerAwareness {
+        public static bool TryGetIncomingFireSuppressTarget(BotOwner owner, EnemyInfo? enemy, out Vector3 target) { target=Vector3.zero; return false; }
+    }
+}
 namespace pitTeam.BigBrain {
     public class FollowerCombatCommon {
         public BotOwner botOwner = new BotOwner();

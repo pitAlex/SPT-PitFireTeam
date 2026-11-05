@@ -12,10 +12,10 @@ namespace pitTeam.Modules
         private static Func<Task> sessionRefresh;
         public static void RegisterSessionRefresh(GameplayMode mode, Func<Task> refresh)
         {
-            if (mode != GameplayMode.GoingRogue || !Registered.Contains(mode)) throw new ArgumentOutOfRangeException(nameof(mode));
+            if (mode != GameplayMode.Allegiance || !Registered.Contains(mode)) throw new ArgumentOutOfRangeException(nameof(mode));
             sessionRefresh = refresh;
         }
-        internal static bool HasSessionRefresh => Registered.Contains(GameplayMode.GoingRogue) && sessionRefresh != null;
+        internal static bool HasSessionRefresh => Registered.Contains(GameplayMode.Allegiance) && sessionRefresh != null;
         internal static Task RefreshSessionAsync() => HasSessionRefresh
             ? sessionRefresh() : Task.CompletedTask;
         public static void RegisterModeCard(GameplayMode mode, string path)
@@ -36,22 +36,37 @@ namespace pitTeam.Modules
         private static Func<string, bool> companionCombatPolicy;
         private static Func<string, string, bool> questCompanionPolicy;
         private static Func<string, string, Func<string, bool>, bool> questCompanionProgressPolicy;
+        private static Func<string, bool?> recruitmentFriendship;
+        private static Func<string, float?> recruitmentChance;
+        private static Func<string, bool> recruitmentAllowed;
+
+        public static void RegisterRecruitmentPolicy(GameplayMode mode, Func<string, bool?> friendship,
+            Func<string, float?> chance, Func<string, bool> allowed)
+        {
+            if (mode != GameplayMode.Allegiance || !Registered.Contains(mode)) throw new ArgumentOutOfRangeException(nameof(mode));
+            recruitmentFriendship = friendship;
+            recruitmentChance = chance;
+            recruitmentAllowed = allowed;
+        }
+        public static bool? RecruitmentFriendship(string role) => Registered.Contains(Current) ? recruitmentFriendship?.Invoke(role) : null;
+        internal static float? RecruitmentChance(string role) => Registered.Contains(Current) ? recruitmentChance?.Invoke(role) : null;
+        internal static bool RecruitmentAllowed(string role) => !Registered.Contains(Current) || recruitmentAllowed?.Invoke(role) != false;
 
         public static void RegisterQuestCompanionPolicy(GameplayMode mode, Func<string, string, bool> policy)
         {
-            if (mode != GameplayMode.GoingRogue || !Registered.Contains(mode)) throw new ArgumentOutOfRangeException(nameof(mode));
+            if (mode != GameplayMode.Allegiance || !Registered.Contains(mode)) throw new ArgumentOutOfRangeException(nameof(mode));
             questCompanionPolicy = policy;
             questCompanionProgressPolicy = null;
         }
         public static void RegisterQuestCompanionProgressPolicy(GameplayMode mode, Func<string, string, Func<string, bool>, bool> policy)
         {
-            if (mode != GameplayMode.GoingRogue || !Registered.Contains(mode)) throw new ArgumentOutOfRangeException(nameof(mode));
+            if (mode != GameplayMode.Allegiance || !Registered.Contains(mode)) throw new ArgumentOutOfRangeException(nameof(mode));
             questCompanionProgressPolicy = policy;
             questCompanionPolicy = null;
         }
         internal static bool CanSpawnQuestCompanion(string quest, string location, Func<string, bool> objectiveCompleted = null)
         {
-            if (Current != GameplayMode.GoingRogue || !Registered.Contains(Current)) return false;
+            if (Current != GameplayMode.Allegiance || !Registered.Contains(Current)) return false;
             return questCompanionProgressPolicy != null
                 ? objectiveCompleted != null && questCompanionProgressPolicy(quest, location, objectiveCompleted)
                 : questCompanionPolicy?.Invoke(quest, location) == true;
@@ -60,16 +75,16 @@ namespace pitTeam.Modules
             Registered.Contains(Current) && companionCombatPolicy?.Invoke(role) == true;
         public static GameplayMode Current => GameplayModeRuntime.Current;
         public static bool HasSelectedBossCompanions => Utils.SpawnHelper.spawnMemberIdsBoss.Count > 0 ||
-            (Current == GameplayMode.GoingRogue && Registered.Contains(Current) && goonCompanionsPresent?.Invoke() == true);
-        public static bool IsRogueRaid => Current == GameplayMode.GoingRogue && Registered.Contains(Current) && rogueCompanionsPresent?.Invoke() == true;
-        public static bool IsExUsecFriendlyRaid => IsRogueRaid && exUsecFriendshipEnabled;
+            (Current == GameplayMode.Allegiance && Registered.Contains(Current) && goonCompanionsPresent?.Invoke() == true);
+        public static bool IsRogueRaid => Current == GameplayMode.Allegiance && Registered.Contains(Current) && rogueCompanionsPresent?.Invoke() == true;
+        public static bool IsExUsecFriendlyRaid => RecruitmentFriendship("exUsec") ?? (IsRogueRaid && exUsecFriendshipEnabled);
         public static void Register(GameplayMode mode, Func<bool> companionsPresent = null,
             Func<bool> goonsPresent = null, bool exUsecFriendly = false,
             Action<string> resolveSelection = null, Func<string, string, bool> companionReady = null,
             Action<string> abortCompanion = null, Func<string, CompanionGearPolicy> gearPolicy = null,
             Func<string, bool> ownsCombat = null)
         {
-            if (mode != GameplayMode.GoingRogue) throw new ArgumentOutOfRangeException(nameof(mode));
+            if (mode != GameplayMode.Allegiance) throw new ArgumentOutOfRangeException(nameof(mode));
             Registered.Add(mode);
             ModeCards.Remove(mode);
             sessionRefresh = null;
@@ -85,6 +100,9 @@ namespace pitTeam.Modules
             advanceOrderPolicy = null;
             questCompanionPolicy = null;
             questCompanionProgressPolicy = null;
+            recruitmentFriendship = null;
+            recruitmentChance = null;
+            recruitmentAllowed = null;
         }
         public static void Unregister(GameplayMode mode)
         {
@@ -102,16 +120,19 @@ namespace pitTeam.Modules
             companionCombatPolicy = null;
             companionCommandPolicy = null;
             advanceOrderPolicy = null;
+            recruitmentFriendship = null;
+            recruitmentChance = null;
+            recruitmentAllowed = null;
         }
         public static void RegisterCommandPolicy(GameplayMode mode, Func<string, CompanionCommandPolicy> policy)
         {
-            if (mode != GameplayMode.GoingRogue || !Registered.Contains(mode))
+            if (mode != GameplayMode.Allegiance || !Registered.Contains(mode))
                 throw new InvalidOperationException("The gameplay mode must be registered before its command policy");
             companionCommandPolicy = policy;
         }
         public static void RegisterAdvanceOrderPolicy(GameplayMode mode, Func<CompanionAdvanceOrderContext, bool?> policy)
         {
-            if (mode != GameplayMode.GoingRogue || !Registered.Contains(mode))
+            if (mode != GameplayMode.Allegiance || !Registered.Contains(mode))
                 throw new InvalidOperationException("The gameplay mode must be registered before its advance-order policy");
             advanceOrderPolicy = policy;
         }
@@ -123,18 +144,19 @@ namespace pitTeam.Modules
         }
         internal static void ConfirmSpawnSelection(string json)
         {
-            if (Current == GameplayMode.GoingRogue && (!Registered.Contains(Current) || resolveSpawnSelection == null))
+            if (Registered.Contains(Current) && resolveSpawnSelection == null)
                 throw new InvalidOperationException("Companion selection provider is unavailable");
             if (Registered.Contains(Current)) resolveSpawnSelection?.Invoke(json);
         }
         internal static bool IsSpawnCombatReady(string profileId, string role) =>
-            Current != GameplayMode.GoingRogue || (Registered.Contains(Current) && spawnReady?.Invoke(profileId, role) == true);
+            !Registered.Contains(Current) || !OwnsCompanionCombat(role) || spawnReady?.Invoke(profileId, role) == true;
         internal static void AbortSpawn(string profileId) { if (Registered.Contains(Current)) abortSpawn?.Invoke(profileId); }
         internal static CompanionGearPolicy GetCompanionGearPolicy(string role) =>
             Registered.Contains(Current) ? companionGearPolicy?.Invoke(role) : null;
         internal static CompanionCommandPolicy GetCompanionCommandPolicy(string role) =>
             Registered.Contains(Current) ? companionCommandPolicy?.Invoke(role) : null;
+        public static bool HasExtension(GameplayMode mode) => Registered.Contains(mode);
         public static bool IsAvailable(GameplayMode mode) =>
-            mode == GameplayMode.GunsForHire || mode == GameplayMode.Allegiance || Registered.Contains(mode);
+            mode == GameplayMode.GunsForHire || mode == GameplayMode.Allegiance;
     }
 }

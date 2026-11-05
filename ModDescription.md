@@ -36,7 +36,7 @@ The in-game **My Squad** screen is your squad management hub. Choose between **G
 - `≥ v. 1.1.0` **Teammate workshop** - customize saved teammates from your server's web page: names, heads, voices, level, skills, health and pocket size, while keeping their equipment intact.
 - `≥ v. 1.0.0` **Self-Determination** - tune how independently each saved teammate acts in combat, separately from Aggression, with temporary command overrides.
 - `≥ v. 1.0.0` **Loadout management and insurance** - equip teammates from your stash, purchase kits, and insure their equipment under your chosen loadout rules.
-- `≥ v. 1.1.0` **Persistent teammate health** - carry raid injuries between raids, recover with your hideout bonuses, or pay to heal wounded teammates. Direct treatment currently uses money only; stash medkits are not supported yet.
+- `≥ v. 1.1.0` **Persistent teammate health** - carry raid injuries between raids, recover with your hideout bonuses, or heal wounded teammates with roubles or your own medkits.
 - `≥ v. 1.0.0` **In-raid equipment exchange** - use **Swap Gear** to rearrange a spawned teammate's equipment and inventory, then confirm when ready.
 - `≥ v. 1.0.0` **Give Gear** - offer equipment to recruited PMCs and Scavs, who evaluate weapons, protection, ammunition support, and storage before deciding what to equip.
 - **Weapon-aware combat** - teammate decisions consider weapon role, caliber, magazine capacity, ammo penetration, and secondary weapon options.
@@ -219,9 +219,9 @@ Equipment a teammate keeps and loot they return are not the same thing. See **Lo
 
 `≥ v. 1.1.0` Saved teammates retain their body-part injuries after raids when **Field Upkeep** is enabled in Restricted. Immersive and Realistic retain injuries automatically. Bleeding, fractures and other temporary effects are cleared after the raid.
 
-Wounded teammates have a reddish portrait background and cannot join another raid until fully recovered. Their health recovers over time with your hideout bonuses. To heal them immediately, open their profile and press **HEAL** to confirm the rouble cost, which uses Therapist's healing prices and your discounts.
+Wounded teammates have a reddish portrait background and cannot join another raid until fully recovered. Their health recovers over time with your hideout bonuses. To heal them immediately, open their profile and press **HEAL** to choose Therapist treatment with roubles or select an unlocked medkit from your inventory. Therapist treatment uses her healing prices and your discounts.
 
-**Current limitation: direct post-raid treatment is available only for money. You cannot use medkits from your stash to heal teammates yet.** Turning Field Upkeep off stops retaining new raid injuries in Restricted; it does not heal existing wounds. Those teammates still need paid treatment or time to recover.
+Medkits in accessible inventory containers can restore HP, spending only the resource needed. A kit with insufficient resource leaves the teammate partly wounded; use another kit or Therapist treatment to finish healing. Locked containers are excluded. Turning Field Upkeep off stops retaining new raid injuries in Restricted; it does not heal existing wounds. Those teammates still need treatment or time to recover.
 
 ## Squad Commands
 
@@ -724,8 +724,12 @@ This remains a known issue. Swap Gear and Give Gear also deliberately refuse to 
 
 ### Movement and combat troubleshooting
 
+**Keep track of your followers' positions and be mindful of the terrain you lead them through.** Bots cannot reliably follow you everywhere you can go. Dense vegetation, obstacles, steep terrain, stairs and tight spaces can slow them down or prevent them from reaching you. Choose accessible routes and check that your followers have caught up before advancing into another fight.
+
 - **Not moving after a fight:** allow ongoing treatment or reloads to finish. If the follower still does not resume, try **Attention**.
+- **Slowing down in bushes:** followers may run straight through bushes instead of going around them, significantly slowing their movement. Watch their positions when crossing dense vegetation; do not assume they are keeping pace with you.
 - **Stuck on a route or falling behind:** followers can struggle with doors, stairs, tight interiors, or map geometry. Check their position before starting another fight. Try Attention, then teleportation if needed.
+- **Teleporting back and forth while following:** followers can repeatedly teleport between positions while trying to approach you. Check the terrain and the route between you and them, and lead them toward more accessible ground.
 - **Teleportation problems:** avoid teleporting a follower while he is using a door, transferring items, or performing another interaction. With some AI setups, he may return to his previous position afterward.
 - **Missing body after a fall:** followers have been reported falling below the playable map. Equipment may not be recoverable during that raid. Do not assume an empty spot means the gear was returned or safely stored.
 - **Hesitation around foliage:** a known enemy behind bushes does not always produce an immediate shot. **Suppress** can help a suitably equipped follower fire toward a known position, but cannot bypass hard cover or friendly-fire safety.

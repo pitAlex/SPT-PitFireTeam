@@ -309,6 +309,8 @@ namespace pitTeam.Patches
             public string Nickname;
             public int Level;
             public EChatMemberSide Side;
+            public EMemberCategory MemberCategory;
+            public EMemberCategory SelectedMemberCategory;
         }
 
         protected override MethodBase GetTargetMethod()
@@ -338,9 +340,9 @@ namespace pitTeam.Patches
                     }
 
                     string accountId = GetStableAccountId(member);
-                    if (teammatesByAccountId.ContainsKey(accountId))
+                    if (teammatesByAccountId.TryGetValue(accountId, out TeammateInviteEntry teammate))
                     {
-                        NormalizeInviteTeammateMember(member);
+                        NormalizeInviteTeammateMember(member, teammate);
                     }
 
                     if (!seenAccountIds.Add(accountId))
@@ -364,7 +366,7 @@ namespace pitTeam.Patches
                 teammateMember.Info.Nickname = teammate.Nickname;
                 teammateMember.Info.Level = teammate.Level;
                 teammateMember.Info.Side = teammate.Side;
-                NormalizeInviteTeammateMember(teammateMember);
+                NormalizeInviteTeammateMember(teammateMember, teammate);
                 filtered.Add(teammateMember);
             }
 
@@ -395,6 +397,9 @@ namespace pitTeam.Patches
                     string accountId = teammate?["Aid"]?.ToString() ?? teammate?["aid"]?.ToString();
                     string id = teammate?["Id"]?.ToString() ?? teammate?["id"]?.ToString();
                     string nickname = teammate?["Info"]?["Nickname"]?.ToString() ?? teammate?["info"]?["nickname"]?.ToString();
+                    JToken info = teammate?["Info"] ?? teammate?["info"];
+                    EMemberCategory category = ParseMemberCategory(
+                        (info?["MemberCategory"] ?? info?["memberCategory"])?.ToString(), EMemberCategory.Unheard);
 
                     if (string.IsNullOrWhiteSpace(accountId) || string.IsNullOrWhiteSpace(id) || string.IsNullOrWhiteSpace(nickname))
                     {
@@ -407,7 +412,10 @@ namespace pitTeam.Patches
                         Id = id,
                         Nickname = nickname,
                         Level = ParseInt(teammate?["Info"]?["Level"]?.ToString() ?? teammate?["info"]?["level"]?.ToString()),
-                        Side = ParseSide(teammate?["Info"]?["Side"]?.ToString() ?? teammate?["info"]?["side"]?.ToString())
+                        Side = ParseSide(teammate?["Info"]?["Side"]?.ToString() ?? teammate?["info"]?["side"]?.ToString()),
+                        MemberCategory = category,
+                        SelectedMemberCategory = ParseMemberCategory(
+                            (info?["SelectedMemberCategory"] ?? info?["selectedMemberCategory"])?.ToString(), category)
                     };
                 }
             }
@@ -420,15 +428,20 @@ namespace pitTeam.Patches
             return teammatesByAccountId;
         }
 
-        private static void NormalizeInviteTeammateMember(UpdatableChatMember member)
+        private static void NormalizeInviteTeammateMember(UpdatableChatMember member, TeammateInviteEntry teammate)
         {
             if (member?.Info == null)
             {
                 return;
             }
 
-            member.Info.MemberCategory = EMemberCategory.Unheard;
-            member.Info.SelectedMemberCategory = EMemberCategory.Unheard;
+            member.Info.MemberCategory = teammate.MemberCategory;
+            member.Info.SelectedMemberCategory = teammate.SelectedMemberCategory;
+        }
+
+        private static EMemberCategory ParseMemberCategory(string value, EMemberCategory fallback)
+        {
+            return Enum.TryParse(value, true, out EMemberCategory category) ? category : fallback;
         }
 
         private static bool ShouldIncludeInviteMember(UpdatableChatMember member)

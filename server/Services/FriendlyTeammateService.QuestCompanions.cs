@@ -26,12 +26,15 @@ public partial class FriendlyTeammateService
         GetRaidConfigurationRequestData configuration, double? healthMultiplier, string preparationToken)
     {
         if (!preparedCompanionRaids.TryGetValue(sessionId.ToString(), out var prepared) || prepared.Token != preparationToken ||
-            prepared.ModeGeneration != FriendlyModeRequestGate.Generation || prepared.QuestCompanion?.Info?.Settings?.Role != role)
+            prepared.ModeGeneration != FriendlyModeRequestGate.Generation)
             throw new InvalidOperationException("The displayed quest companion is unavailable; refusing to reroll it");
+        var reserved = prepared.QuestCompanions.GetValueOrDefault(role) ??
+            (prepared.QuestCompanion?.Info?.Settings?.Role == role ? prepared.QuestCompanion : null);
+        if (reserved == null) throw new InvalidOperationException("The displayed quest companion is unavailable; refusing to reroll it");
         var reservedConfiguration = jsonUtil.Deserialize<GetRaidConfigurationRequestData>(prepared.Configuration)!;
         if (reservedConfiguration.Location != configuration.Location || reservedConfiguration.TimeVariant != configuration.TimeVariant)
             throw new InvalidOperationException("Quest companion raid configuration changed");
-        var profile = cloner.Clone(prepared.QuestCompanion)!;
+        var profile = cloner.Clone(reserved)!;
         ApplyTemporaryHealthMultiplier(profile, healthMultiplier);
         logger.Info($"[QuestCompanion] spawn prepared token={preparationToken} role={role} profile={profile.Id}");
         return profile;

@@ -1,6 +1,6 @@
 # SAIN addon remaining work
 
-**Base:** [Core roadmap](../../TASKS.md) and [Core combat](../../docs/Combat-Tactics.md). This page records only addon-specific gaps and qualification; it does not authorize speculative gameplay changes.
+**Base:** [Core roadmap](../../docs/Roadmap.md) and [Core combat](../../docs/Combat-Tactics.md). This page records only addon-specific gaps and qualification; it does not authorize speculative gameplay changes.
 
 ## Raid qualification
 

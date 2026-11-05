@@ -48,40 +48,43 @@ internal static class Program
         pitFireTeam.restrictedGearMaintenance.Value = true;
         var custom = config.Bind("Other", "Untouched", 17);
         GameplayModeRuntime.Initialize(config);
-        await Reject(() => GameplayModeRuntime.ChangeAsync(GameplayMode.GoingRogue), "Going Rogue requires its addon");
+        await Reject(() => GameplayModeRuntime.ChangeAsync((GameplayMode)2), "retired third mode cannot be selected");
+        Check(Enum.GetValues(typeof(GameplayMode)).Length == 2, "only two gameplay modes exist");
         var modeSpecificKeys = new HashSet<string> { "BadGuy", "Friendly", "Tracking", "Pickup", "Tiered", "Maximum", "Recruit", "TeamEscape", "TeamEscapeUseAnyExtract" };
         var original = config.Where(pair => pair.Key.Section == "Game" && modeSpecificKeys.Contains(pair.Key.Key)).ToDictionary(pair => pair.Key, pair => pair.Value.GetSerializedValue());
         Check(pitFireTeam.friendlyEncounterChance.Value == 30 && !GameplayModeRuntime.IsSettingUnavailableInCurrentMode(pitFireTeam.friendlyEncounterChance), "friendly chance defaults to 30 and is editable in Guns for Hire");
         Check(pitFireTeam.friendlyScavEncounters.Value && GameplayModeRuntime.IsSettingUnavailableInCurrentMode(pitFireTeam.friendlyScavEncounters), "Scav encounters default on but the toggle is unavailable in Guns for Hire");
         await GameplayModeRuntime.ChangeAsync(GameplayMode.Allegiance);
         string beforeRogue = File.ReadAllText(path + ".guns-for-hire.json");
+        await GameplayModeRuntime.ChangeAsync(GameplayMode.GunsForHire);
         bool roguePresent = false;
-        GameplayModeAddons.Register(GameplayMode.GoingRogue, () => roguePresent, () => roguePresent, exUsecFriendly: false,
+        GameplayModeAddons.Register(GameplayMode.Allegiance, () => roguePresent, () => roguePresent, exUsecFriendly: false,
             gearPolicy: pitTeam.GoingRogue.GoonGearPolicy.ForRole,
             ownsCombat: RogueRosterSelection.IsGoonRole);
-        GameplayModeAddons.RegisterModeCard(GameplayMode.GoingRogue,"addon/going-rogue-card.png");
-        Check(GameplayModeAddons.ModeCardPath(GameplayMode.GoingRogue)=="addon/going-rogue-card.png", "registered addon owns its onboarding artwork path");
+        GameplayModeAddons.RegisterModeCard(GameplayMode.Allegiance,"addon/going-rogue-card.png");
+        Check(GameplayModeAddons.ModeCardPath(GameplayMode.Allegiance)=="addon/going-rogue-card.png", "registered addon owns its onboarding artwork path");
         Check(!GameplayModeAddons.OwnsCompanionCombat("bossKnight"), "companion combat ownership is mode scoped");
         Check(GameplayModeAddons.GetCompanionGearPolicy("bossKnight") == null, "Knight's gear restrictions do not affect another mode");
         SPT.Common.Http.RequestHandler.GoingRogueAvailable = false;
-        await Reject(() => GameplayModeRuntime.ChangeAsync(GameplayMode.GoingRogue), "Going Rogue requires the server addon too");
+        await GameplayModeRuntime.ChangeAsync(GameplayMode.Allegiance);
+        Check(GameplayModeRuntime.IsAllegiance, "Allegiance remains usable without the server extension");
         SPT.Common.Http.RequestHandler.GoingRogueAvailable = true;
-        await GameplayModeRuntime.ChangeAsync(GameplayMode.GoingRogue);
-        GameplayModeAddons.RegisterQuestCompanionPolicy(GameplayMode.GoingRogue,(quest,map)=>true);
+        await GameplayModeRuntime.ChangeAsync(GameplayMode.Allegiance);
+        GameplayModeAddons.RegisterQuestCompanionPolicy(GameplayMode.Allegiance,(quest,map)=>true);
         Check(GameplayModeAddons.CanSpawnQuestCompanion("test","woods"),"legacy map-only quest callback stays compatible");
-        GameplayModeAddons.RegisterQuestCompanionProgressPolicy(GameplayMode.GoingRogue,(quest,map,completed)=>!completed("objective"));
+        GameplayModeAddons.RegisterQuestCompanionProgressPolicy(GameplayMode.Allegiance,(quest,map,completed)=>!completed("objective"));
         Check(!GameplayModeAddons.CanSpawnQuestCompanion("test","woods"),"progress-aware companion callback requires a current completion reader");
         Check(GameplayModeAddons.CanSpawnQuestCompanion("test","woods",_=>false) && !GameplayModeAddons.CanSpawnQuestCompanion("test","woods",_=>true),"addon can admit only unfinished native objectives");
-        GameplayModeAddons.RegisterQuestCompanionPolicy(GameplayMode.GoingRogue,(quest,map)=>true);
+        GameplayModeAddons.RegisterQuestCompanionPolicy(GameplayMode.Allegiance,(quest,map)=>true);
         Check(GameplayModeAddons.CanSpawnQuestCompanion("test","woods",_=>true),"replacing a progress policy clears its old callback");
-        GameplayModeAddons.RegisterQuestCompanionPolicy(GameplayMode.GoingRogue,null);
+        GameplayModeAddons.RegisterQuestCompanionPolicy(GameplayMode.Allegiance,null);
         Check(!GameplayModeAddons.CanSpawnQuestCompanion("test","woods",_=>false),"cleared quest callback cannot retain automatic companion admission");
         Check(new[]{"bossKnight","followerBigPipe","followerBirdEye"}.All(GameplayModeAddons.OwnsCompanionCombat),
             "all managed Goons own combat independently of a stale saved SAIN tactic");
         Check(!GameplayModeAddons.OwnsCompanionCombat("exUsec") && !GameplayModeAddons.OwnsCompanionCombat(null),
             "ordinary followers retain their selected combat owner");
-        Check(GameplayModeRuntime.IsGoingRogue && GameplayModeRuntime.IsAllegiance && SPT.Common.Http.RequestHandler.Mode == "GoingRogue",
-            "Going Rogue selects its own identity with Allegiance policy");
+        Check(GameplayModeRuntime.IsGoingRogueActive && GameplayModeRuntime.IsAllegiance && SPT.Common.Http.RequestHandler.Mode == "Allegiance",
+            "Going Rogue extends the existing Allegiance identity");
         Check(GameplayModeRuntime.IsLocked(pitFireTeam.maximumPickup) && GameplayModeRuntime.GetEffectiveValue(pitFireTeam.maximumPickup) == 2,
             "Going Rogue shares Allegiance setting locks");
         Check(File.ReadAllText(path + ".guns-for-hire.json") == beforeRogue, "locked-mode transitions preserve the Guns for Hire snapshot");
@@ -89,7 +92,7 @@ internal static class Program
         custom = config.Bind("Other", "Untouched", 17);
         GameplayModeRuntime.Initialize(config);
         await GameplayModeRuntime.SynchronizeAsync();
-        Check(GameplayModeRuntime.IsGoingRogue && GameplayModeRuntime.GetEffectiveValue(pitFireTeam.maximumPickup) == 2,
+        Check(GameplayModeRuntime.IsGoingRogueActive && GameplayModeRuntime.GetEffectiveValue(pitFireTeam.maximumPickup) == 2,
             "Going Rogue survives config restart with the same settings policy");
         Check(!GameplayModeAddons.IsRogueRaid, "empty Going Rogue raids do not force Bad Guy");
         roguePresent = true;
@@ -107,13 +110,13 @@ internal static class Program
         Check(new[] { "pmcUSEC", "exUsec", null }.All(role =>
             GameplayModeAddons.GetCompanionGearPolicy(role) == null), "Goon gear restriction does not leak to ordinary roles");
         bool claimed = false;
-        GameplayModeAddons.RegisterCommandPolicy(GameplayMode.GoingRogue, GoonCommandPolicy.ForRole);
+        GameplayModeAddons.RegisterCommandPolicy(GameplayMode.Allegiance, GoonCommandPolicy.ForRole);
         Check(GameplayModeAddons.EvaluateAdvanceOrder(new CompanionAdvanceOrderContext()) == null, "advance-order arbitration is absent by default");
-        GameplayModeAddons.RegisterAdvanceOrderPolicy(GameplayMode.GoingRogue, _ => true);
+        GameplayModeAddons.RegisterAdvanceOrderPolicy(GameplayMode.Allegiance, _ => true);
         Check(GameplayModeAddons.EvaluateAdvanceOrder(new CompanionAdvanceOrderContext()) == true, "registered optional advance-order arbitration is used");
-        GameplayModeAddons.RegisterAdvanceOrderPolicy(GameplayMode.GoingRogue, _ => throw new Exception("test arbitration failure"));
+        GameplayModeAddons.RegisterAdvanceOrderPolicy(GameplayMode.Allegiance, _ => throw new Exception("test arbitration failure"));
         Check(GameplayModeAddons.EvaluateAdvanceOrder(new CompanionAdvanceOrderContext()) == false, "failing optional command arbitration refuses safely");
-        GameplayModeAddons.RegisterAdvanceOrderPolicy(GameplayMode.GoingRogue, null);
+        GameplayModeAddons.RegisterAdvanceOrderPolicy(GameplayMode.Allegiance, null);
         foreach (string role in new[] { "bossKnight", "followerBigPipe", "followerBirdEye" })
         {
             Check(GameplayModeAddons.GetCompanionCommandPolicy(role)?.AlwaysAcceptCombatPoint == true,
@@ -151,11 +154,17 @@ internal static class Program
             GameplayModeAddons.GetCompanionCommandPolicy("pmcUSEC") == null,
             "boss command policy does not leak to other roles");
         bool released = false;
-        GameplayModeAddons.Register(GameplayMode.GoingRogue, () => roguePresent, () => roguePresent,
+        GameplayModeAddons.RegisterRecruitmentPolicy(GameplayMode.Allegiance,
+            role => role=="exUsec" ? true : (bool?)null, role => role=="exUsec" ? 0.7f : (float?)null, role => role!="exUsec");
+        Check(GameplayModeAddons.IsExUsecFriendlyRaid && GameplayModeAddons.RecruitmentChance("exUsec")==0.7f &&
+            !GameplayModeAddons.RecruitmentAllowed("exUsec"),"optional Rogue friendship, willingness and eligibility stay separate");
+        GameplayModeAddons.Register(GameplayMode.Allegiance, () => roguePresent, () => roguePresent,
             resolveSelection: _ => { }, companionReady: (id, role) => claimed,
-            abortCompanion: _ => released = true);
+            abortCompanion: _ => released = true, ownsCombat: RogueRosterSelection.IsGoonRole);
         Check(GameplayModeAddons.GetCompanionCommandPolicy("bossKnight") == null,
             "replacing a registration cannot keep an abandoned command policy");
+        Check(GameplayModeAddons.RecruitmentFriendship("exUsec")==null && GameplayModeAddons.RecruitmentChance("exUsec")==null &&
+            GameplayModeAddons.RecruitmentAllowed("exUsec"),"replacing addon registration restores neutral Core recruitment defaults");
         Check(!GameplayModeAddons.IsSpawnCombatReady("knight", "bossKnight"), "unclaimed Knight remains pending");
         claimed = true;
         Check(GameplayModeAddons.IsSpawnCombatReady("knight", "bossKnight"), "claimed Knight satisfies readiness");
@@ -163,26 +172,26 @@ internal static class Program
         Check(released, "spawn failure releases the addon combat owner");
         SPT.Common.Http.RequestHandler.GoingRogueAvailable = false;
         await GameplayModeRuntime.SynchronizeAsync();
-        Check(GameplayModeRuntime.Current == GameplayMode.GunsForHire && !GameplayModeAddons.IsRogueRaid,
-            "missing server addon returns to Guns for Hire without retaining Rogue flags");
+        Check(GameplayModeRuntime.Current == GameplayMode.Allegiance,
+            "missing server addon never removes the built-in Allegiance mode");
         SPT.Common.Http.RequestHandler.GoingRogueAvailable = true;
-        await GameplayModeRuntime.ChangeAsync(GameplayMode.GoingRogue);
-        GameplayModeAddons.Unregister(GameplayMode.GoingRogue);
-        Check(GameplayModeAddons.ModeCardPath(GameplayMode.GoingRogue)==null,"removing the addon releases its artwork registration");
-        await GameplayModeRuntime.SynchronizeAsync();
-        Check(GameplayModeRuntime.Current == GameplayMode.GunsForHire && !GameplayModeAddons.IsRogueRaid,
-            "missing client addon returns to Guns for Hire without retaining Rogue flags");
-        GameplayModeAddons.Register(GameplayMode.GoingRogue, () => roguePresent);
-        GameplayModeAddons.RegisterCommandPolicy(GameplayMode.GoingRogue, GoonCommandPolicy.ForRole);
-        await GameplayModeRuntime.ChangeAsync(GameplayMode.GoingRogue);
         await GameplayModeRuntime.ChangeAsync(GameplayMode.Allegiance);
+        GameplayModeAddons.Unregister(GameplayMode.Allegiance);
+        Check(GameplayModeAddons.ModeCardPath(GameplayMode.Allegiance)==null,"removing the addon releases its artwork registration");
+        await GameplayModeRuntime.SynchronizeAsync();
+        Check(GameplayModeRuntime.Current == GameplayMode.Allegiance && !GameplayModeAddons.IsRogueRaid,
+            "missing client addon leaves ordinary Allegiance active");
+        GameplayModeAddons.Register(GameplayMode.Allegiance, () => roguePresent);
+        GameplayModeAddons.RegisterCommandPolicy(GameplayMode.Allegiance, GoonCommandPolicy.ForRole);
+        await GameplayModeRuntime.ChangeAsync(GameplayMode.GunsForHire);
         Check(GameplayModeAddons.GetCompanionCommandPolicy("bossKnight") == null,
-            "registered Goon willingness cannot affect Allegiance");
+            "registered Goon willingness cannot affect Guns for Hire");
         Check(!GameplayModeAddons.IsRogueRaid && File.ReadAllText(path + ".guns-for-hire.json") == beforeRogue,
-            "leaving Going Rogue releases raid policy and preserves original preferences");
-        GameplayModeAddons.Unregister(GameplayMode.GoingRogue);
+            "leaving Allegiance releases addon raid policy and preserves original preferences");
+        GameplayModeAddons.Unregister(GameplayMode.Allegiance);
         Check(GameplayModeAddons.GetCompanionCommandPolicy("bossKnight") == null,
             "unregister removes companion command willingness");
+        await GameplayModeRuntime.ChangeAsync(GameplayMode.Allegiance);
         Check(!GameplayModeRuntime.IsSettingUnavailableInCurrentMode(pitFireTeam.friendlyEncounterChance), "friendly chance is enabled in Allegiance");
         Check(!GameplayModeRuntime.IsSettingUnavailableInCurrentMode(pitFireTeam.friendlyScavEncounters), "Scav encounters are editable in Allegiance");
         pitFireTeam.friendlyScavEncounters.Value = false;
@@ -325,37 +334,40 @@ internal static class Program
         release.Set();
         await Task.WhenAll(request, changing);
         Check(GameplayModeRuntime.IsAllegiance, "mode proceeds after delayed requests finish");
-        var refreshedModes=new List<string>();
-        GameplayModeAddons.Register(GameplayMode.GoingRogue);
-        GameplayModeAddons.RegisterSessionRefresh(GameplayMode.GoingRogue,() =>
+        await GameplayModeRuntime.ChangeAsync(GameplayMode.GunsForHire);
+        var refreshedModes = new List<string>();
+        GameplayModeAddons.Register(GameplayMode.Allegiance);
+        GameplayModeAddons.RegisterSessionRefresh(GameplayMode.Allegiance, () =>
         {
-            Check(SPT.Common.Http.RequestHandler.Mode==GameplayModeRuntime.Current.ToString(),"addon session refresh follows confirmed server settings");
-            refreshedModes.Add(GameplayModeRuntime.Current.ToString());return Task.CompletedTask;
+            Check(SPT.Common.Http.RequestHandler.Mode == GameplayModeRuntime.Current.ToString(), "session refresh follows server settings");
+            refreshedModes.Add(GameplayModeRuntime.Current.ToString()); return Task.CompletedTask;
         });
-        await GameplayModeRuntime.ChangeAsync(GameplayMode.GoingRogue);
         await GameplayModeRuntime.ChangeAsync(GameplayMode.Allegiance);
-        Check(refreshedModes.SequenceEqual(new[]{"GoingRogue","Allegiance"}),"optional session refresh runs entering and leaving its mode");
+        await GameplayModeRuntime.ChangeAsync(GameplayMode.GunsForHire);
+        Check(refreshedModes.SequenceEqual(new[] { "Allegiance", "GunsForHire" }), "extension refresh runs entering and leaving Allegiance");
         refreshedModes.Clear();
-        GameplayModeAddons.RegisterSessionRefresh(GameplayMode.GoingRogue,() =>
+        GameplayModeAddons.RegisterSessionRefresh(GameplayMode.Allegiance, () =>
         {
             refreshedModes.Add(GameplayModeRuntime.Current.ToString());
-            if(GameplayModeRuntime.IsGoingRogue)throw new IOException("simulated native session refresh failure");
+            if (GameplayModeRuntime.IsAllegiance) throw new IOException("simulated native session refresh failure");
             return Task.CompletedTask;
         });
-        await Reject(()=>GameplayModeRuntime.ChangeAsync(GameplayMode.GoingRogue),"a failed native session refresh cannot report a successful switch");
-        Check(GameplayModeRuntime.Current==GameplayMode.Allegiance && SPT.Common.Http.RequestHandler.Mode=="Allegiance" &&
-            refreshedModes.SequenceEqual(new[]{"GoingRogue","Allegiance"}),"rollback restores server/client mode and refreshes the preceding native session");
-        int nativeRefreshes=0;
-        GameplayModeAddons.RegisterSessionRefresh(GameplayMode.GoingRogue,()=>{nativeRefreshes++;return Task.CompletedTask;});
-        await GameplayModeRuntime.ChangeAsync(GameplayMode.GoingRogue);
-        SPT.Common.Http.RequestHandler.GoingRogueAvailable=false;
-        await GameplayModeRuntime.SynchronizeAsync();
-        Check(GameplayModeRuntime.Current==GameplayMode.GunsForHire && nativeRefreshes==1,
-            "a missing server addon cannot block built-in-mode fallback with an unavailable session endpoint");
-        SPT.Common.Http.RequestHandler.GoingRogueAvailable=true;
-        GameplayModeAddons.Unregister(GameplayMode.GoingRogue);
+        await Reject(() => GameplayModeRuntime.ChangeAsync(GameplayMode.Allegiance), "failed extension refresh rolls back transition");
+        Check(GameplayModeRuntime.Current == GameplayMode.GunsForHire && SPT.Common.Http.RequestHandler.Mode == "GunsForHire" &&
+            refreshedModes.SequenceEqual(new[] { "Allegiance", "GunsForHire" }), "rollback reconciles previous session");
+        int nativeRefreshes = 0;
+        GameplayModeAddons.RegisterSessionRefresh(GameplayMode.Allegiance, () => { nativeRefreshes++; return Task.CompletedTask; });
+        SPT.Common.Http.RequestHandler.GoingRogueAvailable = false;
+        await GameplayModeRuntime.ChangeAsync(GameplayMode.Allegiance);
+        Check(GameplayModeRuntime.IsAllegiance && nativeRefreshes == 0, "missing server extension skips optional endpoint, preserving Allegiance");
+        GameplayModeAddons.Unregister(GameplayMode.Allegiance);
         await GameplayModeAddons.RefreshSessionAsync();
-        Check(refreshedModes.Count==2,"removing the addon clears its session refresh callback");
+        Check(nativeRefreshes == 0 && !GameplayModeRuntime.IsGoingRogueActive, "removing extension clears hooks without changing mode");
+        Check(GameplayModeAddons.IsSpawnCombatReady("ordinary", "pmcUSEC"), "ordinary Allegiance followers need no addon readiness provider");
+        string legacyPath = Path.Combine(directory, "legacy.cfg");
+        File.WriteAllText(legacyPath, File.ReadAllText(path).Replace("00 GameplayMode = Allegiance", "00 GameplayMode = GoingRogue"));
+        GameplayModeRuntime.Initialize(Bind(legacyPath));
+        Check(GameplayModeRuntime.Current == GameplayMode.Allegiance && !File.ReadAllText(legacyPath).Contains("00 GameplayMode = GoingRogue"), "retired config value upgrades to Allegiance");
         Console.WriteLine($"PASS: {checks} gameplay config checks. Artifacts: {directory}");
     }
     static ConfigFile Bind(string path)
@@ -425,6 +437,6 @@ namespace SPT.Common.Http
             if (LoseResponse) throw new IOException("Simulated lost response");
             return "{\"err\":0,\"data\":null}";
         }
-        public static string GetJson(string url) => "{\"gameplayMode\":\"" + Mode + "\",\"availableModes\":[\"GunsForHire\",\"Allegiance\"" + (GoingRogueAvailable ? ",\"GoingRogue\"" : "") + "]}";
+        public static string GetJson(string url) => "{\"gameplayMode\":\"" + Mode + "\",\"availableModes\":[\"GunsForHire\",\"Allegiance\"],\"goingRogueAvailable\":" + (GoingRogueAvailable ? "true" : "false") + "}";
     }
 }

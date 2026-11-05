@@ -40,6 +40,7 @@ namespace pitTeam.BigBrain
         private readonly BotOwner BotOwner;
         private readonly FollowerCombatCommon CombatCommon;
         private readonly Func<EnemyInfo, AICoreActionResult<BotLogicDecision, CoreActionResultParams>?> companionPosition;
+        private readonly Func<bool>? companionActiveSupport;
         private AICoreActionResult<BotLogicDecision, CoreActionResultParams>? currentEndSourceDecision;
         private float noActionFallbackUntil;
         private float nextFiringPositionAllowedTime;
@@ -59,10 +60,16 @@ namespace pitTeam.BigBrain
 
         internal FollowerCombatSniper(BotOwner botOwner, FollowerCombatCommon combatCommon,
             Func<EnemyInfo, AICoreActionResult<BotLogicDecision, CoreActionResultParams>?> positionPolicy)
+            : this(botOwner, combatCommon, positionPolicy, null) { }
+
+        internal FollowerCombatSniper(BotOwner botOwner, FollowerCombatCommon combatCommon,
+            Func<EnemyInfo, AICoreActionResult<BotLogicDecision, CoreActionResultParams>?> positionPolicy,
+            Func<bool>? activeSupport)
         {
             BotOwner = botOwner;
             CombatCommon = combatCommon;
             companionPosition = positionPolicy;
+            companionActiveSupport = activeSupport;
         }
 
         public void Reset()
@@ -303,12 +310,12 @@ namespace pitTeam.BigBrain
                 return activeTravel;
             }
 
-            if (TryGetPushSupportDecision(goalEnemy, out AICoreActionResult<BotLogicDecision, CoreActionResultParams> pushSupport))
+            if (companionPosition == null && TryGetPushSupportDecision(goalEnemy, out AICoreActionResult<BotLogicDecision, CoreActionResultParams> pushSupport))
             {
                 return pushSupport;
             }
 
-            if (TryGetSniperSupportDecision(goalEnemy, out AICoreActionResult<BotLogicDecision, CoreActionResultParams> support))
+            if (companionPosition == null && TryGetSniperSupportDecision(goalEnemy, out AICoreActionResult<BotLogicDecision, CoreActionResultParams> support))
             {
                 return support;
             }
@@ -321,7 +328,7 @@ namespace pitTeam.BigBrain
             // Companion positioning runs only after survival, close weapons, commitments and
             // player help. Do not renew character-specific positioning when separation already
             // calls for regroup; the ordinary shot/pressure/cover gates below still retain priority.
-            if (companionPosition != null && !ShouldRegroupForBossDistance())
+            if (companionPosition != null && (!ShouldRegroupForBossDistance() || companionActiveSupport?.Invoke() == true))
             {
                 var companion = companionPosition(goalEnemy);
                 if (companion.HasValue) return companion.Value;
@@ -1031,6 +1038,7 @@ namespace pitTeam.BigBrain
             bool allowActiveSupportPhase = false)
         {
             decision = default;
+            if (companionPosition != null) return false;
             if (supportPhase.IsActive && !allowActiveSupportPhase)
             {
                 return false;
@@ -1389,6 +1397,7 @@ namespace pitTeam.BigBrain
             bool allowActiveSupportPhase = false)
         {
             decision = default;
+            if (companionPosition != null) return false;
             if (supportPhase.IsActive && !allowActiveSupportPhase)
             {
                 return false;
@@ -3009,6 +3018,8 @@ namespace pitTeam.BigBrain
 
             if (Time.time >= noActionFallbackUntil || IsRepositionHoldExpired())
             {
+                if (companionPosition != null)
+                    return new AICoreActionEnd("sniperCompanionReevaluate", true);
                 if (TryPrepareIdleEngagementBreak(goalEnemy))
                 {
                     return new AICoreActionEnd("sniperNoActionEngagement", true);
@@ -3303,7 +3314,7 @@ namespace pitTeam.BigBrain
         /// </summary>
         private bool ShouldRegroupForBossDistance()
         {
-            if (FollowerCombatAnchor.IsCombatIndependent(BotOwner)) return false;
+            if (!FollowerCombatAnchor.CanAutomaticallyRegroup(BotOwner)) return false;
             Vector3 bossPosition = CombatCommon.GetBossPosition();
             if (!IsFinite(bossPosition))
             {
@@ -3508,7 +3519,7 @@ namespace pitTeam.BigBrain
             out AICoreActionResult<BotLogicDecision, CoreActionResultParams> decision)
         {
             decision = default;
-            if (FollowerCombatAnchor.IsCombatIndependent(BotOwner))
+            if (FollowerCombatAnchor.IsCombatIndependent(BotOwner) && !CombatCommon.HasTeamSplitHelpRequest)
             {
                 return false;
             }
@@ -3530,7 +3541,8 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
-            BotOwner? bossEnemy = boss.ClosestEnemy();
+            BotOwner? bossEnemy = BossPlayers.Instance?.GetFollower(BotOwner) is { } member &&
+                member.TryGetTeamSplitHelpEnemy(out var requested) ? requested : boss.ClosestEnemy();
             if (bossEnemy == null || bossEnemy.GetPlayer?.HealthController?.IsAlive != true)
             {
                 return false;

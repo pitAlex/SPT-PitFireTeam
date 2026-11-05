@@ -317,6 +317,8 @@ Shared rule: movement and cover commitments stabilize travel; arrival holders st
 
 ## Rifleman Router Order
 
+Optional companion brains may supply an admitted commander advance to the shared Rifleman engagement calculation. This replaces individual aggression willingness and personal-sighting requirements only for a live, known, same-target directive; survival, weapon, navigation and firing safety remain owned by Core. Cache identity includes the live directive and cohesion state, so withdrawal is immediate. Engagement distance/pull use the valid companion commander when present, with the real human as fallback. Independent members retain commander cohesion while dropping human pull. Ordinary Riflemen have no commander callback. See [exUsec combat](../going-rogue/docs/ExUsec-Combat.md).
+
 Rifleman/default combat currently routes in this order:
 
 1. Refresh shooting-cover state and validate committed cover.
@@ -436,13 +438,19 @@ If the follower is in cover and only under fire, the hold is extended instead of
 
 Hold-facing in Realistic tracking uses the same eligible reported contact as pursuit, including native hearing reports. It does not expire that look solely because the short attack-movement steering freshness window elapsed. Visible enemies retain visible-body targeting; expired/searched/dead contacts and already-visited remembered points cannot regain hold-facing without new evidence. Command looks, target handoff and urgent threat priorities remain above this look. This changes orientation only, preserving arrival-hold duration, posture and permission to fire.
 
-Recorded examples and qualification are in [hold-facing validation](validation/Combat-Hold-Facing.md).
+Generic combat point movement owns route-facing after the native movement update, including the walking slowdown before arrival. It uses the shared movement-or-level look helper so native hearing/cover looks cannot turn an advancing follower away from travel when sprint steering releases. Active native door-facing and the native close visible-enemy look remain authoritative. Destinations, path calculation, sprint slowdown and the subsequent arrival hold retain their existing owners. See [point-movement facing validation](validation/Combat-Point-Facing.md).
+
+Recorded examples and qualification are in hold-facing validation (historical notes retained in Git).
 
 ## Cover Contract
 
 Core splits existing contact advance into a non-publishing `TryPlanContactAdvanceDecision` and explicit `CommitContactAdvancePoint`; ordinary callers retain the same create-and-publish wrapper. Optional companion hold handoffs can therefore prepare a successor before releasing existing commitments. The planner retains known-contact admission, projected 20m steps, standoff, floor, complete-path and teammate fire-lane gates; it does not grant sight or permission to fire.
 
 Core also supplies `TryPlanCombatFollowDecision` for optional companion squad-search policies. This only plans a bounded, complete-path movement point behind an allied leader using admitted enemy memory; it never grants personal sight, shot permission or a firing position. Both this planner and short contact-advance planning require physical floor support within half a meter of the sampled destination, using the native player-collision mask, ignoring triggers and rejecting steep faces. A complete NavMesh path alone does not establish physical support. Going Rogue owns its [Knight/Pipe group-search policy](../going-rogue/docs/BigPipe-Combat.md#joining-knights-search).
+
+Marksman accepts an optional companion support owner without a typed addon dependency. With that callback installed, generic ally/push support cannot choose a competing fight; urgent work, current commitments and existing player-help handling retain precedence. A bounded no-action hold can expire into fresh companion planning. An optional active-support signal permits this planning despite automatic player-distance regroup; explicit Regroup remains authoritative. Ordinary Marksmen retain their existing support and distance policies. Going Rogue owns [Birdeye's hierarchy](../going-rogue/docs/BirdEye-Combat.md#team-engagement).
+
+Companion support resolves only the actor's existing tracked enemies. After a valid movement plan, `TryCommitCompanionSupportPoint` checks contact eligibility, known position and mission ownership, attempts the normal scoped goal setter without clearing memory, and publishes the destination only if that setter accepted the exact enemy. This transaction never grants visibility, personal contact or firing permission. Rejected target changes retain the previous goal and movement.
 
 [Self-Determination](Self-Determination.md) supplies shared combat dependence, ordinary player-separation/cover weighting and automatic regroup calibration independently of Aggression. Automatic regroup and Cover Me capture their completion envelope on activation; explicit normal/tight orders retain their own distances. Productive commitments, medical arrival and real shot safety retain the lifecycle below.
 
@@ -465,6 +473,7 @@ Cover selection is planner-owned and performance-bounded:
 - Navigation distance is memoized per candidate for the frame; intent-specific selectors rank the retained candidates for shooting, advance, retreat/heal, support, or bossward movement.
 - Threat-relative safe-cover selectors test hard geometry first with deterministic standing chest and head rays against EFT's high-poly/terrain mask. Foliage never counts as hard cover, and the blocking geometry must be within 3m of the candidate so a distant wall elsewhere on the threat lane cannot validate an exposed point.
 - Hard-cover results are cached for one second while the threat and cover stay in the same local area, and each follower may run at most eight new collision probes in one frame. If no hard candidate survives, ordinary recovery/boss movement may reuse a weak candidate from the same pool; it does not enumerate cover again.
+- Recovery retreat ranking excludes the existing temporarily blocked cover. If the best candidate's route is unsafe, it excludes that candidate for this scan and tries another from the same cached pool, testing at most four ranked candidates before falling back. Rejected candidates never publish native cover memory. Ordinary non-recovery ranking and the existing final route/claim/arrival checks remain in force.
 - Medical cover is the strict exception: a heal retreat may commit only hard threat-relative cover. It falls through to the existing hidden-point or no-safe-retreat handling instead of treating foliage or another weak point as safe enough to heal.
 - On Streets and Ground Zero only, the same cached navigation distance rejects a cover candidate when reaching that cover would require a major building-scale detour relative to the direct distance to that cover.
 - `GetClosestCoverPoint(...)` remains a convenience API outside this combat evaluation path; core combat does not use it as its final tactical selector.
@@ -707,6 +716,8 @@ Marksman hold behavior periodically evaluates:
 
 Combat regroup is objective-owned.
 
+Combat independence suppresses automatic distance-regroup toward the human. A validated, living companion leader other than the actor retains positional cohesion: `FollowerCombatAnchor.CanAutomaticallyRegroup` allows the existing distance fallback toward that leader without lowering combat independence. A commander anchored to himself and an independent actor without a valid companion leader remain free of automatic regroup. Explicit player commands retain their human-anchor routing. Selection and automatic-objective release use the same predicate, so a companion-bound regroup is not immediately cancelled as independent; protected work and existing arrival/navigation semantics remain authoritative.
+
 Regroup behavior:
 
 - explicit combat regroup activates the regroup objective
@@ -778,6 +789,8 @@ Sense correction owns general `EnemyInfo` truth. Keep extra checks only when the
 
 Recent-contact suppression revalidates its physical firing lane at execution time. It may continue through an explicitly verified soft foliage/grass obstruction, but hard world geometry such as vehicles, walls, and buildings blocks the trigger even while the personal last-seen window is fresh.
 
+Incoming-fire suppression uses a frozen estimate at firing height, preserving the existing horizontal uncertainty and three-second evidence lifetime. Rifle suppression planning and execution may use that evidence when visual/group reports have expired, only for the same living, active, hostile source as the selected enemy. A sound-only bearing or another attacker's report cannot renew that action. This also lets the existing standing-fire/suppress-from planner seek a safe alternative firing position. Hold overlays may respond during recent incoming-fire pressure even after EFT's shorter `IsUnderFire` flag drops; actual friendly lanes, geometry, aim, weapon and sprint gates still apply. These shared Core changes cover ordinary followers and managed Goons without changing native SAIN suppression ownership. See incoming-fire recovery validation (historical notes retained in Git).
+
 Performance boundary: correction is a hot path because it runs after follower `EnemyInfo.CheckLookEnemy`. It only performs line probes for plausible visibility candidates: close contacts where foliage matters, raw visible/shootable contacts, raw direct-visible contacts, or contacts that were directly visible on the previous tick. Distant non-visible enemies are demoted using corrected distance without additional raycasts.
 
 ## Implementation Boundaries
@@ -838,7 +851,7 @@ The layer sits above follower combat/request layers and below native danger esca
 
 ## Peaceful sound orientation
 
-All registered followers, including saved/recruited PMCs, Scavs and allied bosses, suppress native random patrol head scanning. `FollowerPatrolHeadLookPatch` centres only `BotHeadData`'s horizontal target while the actor is active, peacefully in Patrol state and still registered as that exact follower. Native head rotation centres smoothly; native enemy-visibility and combat-state transitions retain ownership. Ordinary bots, dismissed/pending/foreign actors and other head states stay native. This is Core behavior independent of gameplay mode, tactic or optional addons. It does not change peaceful flags, body/weapon steering, command looks, hearing or shared presets. [Validation](validation/Follower-Head-Look.md) distinguishes controlled native-controller checks from live presentation.
+All registered followers, including saved/recruited PMCs, Scavs and allied bosses, suppress native random patrol head scanning. `FollowerPatrolHeadLookPatch` centres only `BotHeadData`'s horizontal target while the actor is active, peacefully in Patrol state and still registered as that exact follower. Native head rotation centres smoothly; native enemy-visibility and combat-state transitions retain ownership. Ordinary bots, dismissed/pending/foreign actors and other head states stay native. This is Core behavior independent of gameplay mode, tactic or optional addons. It does not change peaceful flags, body/weapon steering, command looks, hearing or shared presets. Validation (historical notes retained in Git) distinguishes controlled native-controller checks from live presentation.
 
 Core followers briefly hold a bearing toward personally heard movement, bushes and voices within 25 m. Audible gunfire qualifies only when the shooter faces the follower, player or a living squadmate (30-degree half-cone including elevation); distant unrelated gunfire does not turn them. Core observes the external SAIN plugin's actual audibility result when installed, including without the addon. Without SAIN, existing game hearing events supply audibility. These peaceful reactions do not acquire targets, pursue sounds or grant firing permission. Actual bullet-impact and damage reactions remain separate.
 

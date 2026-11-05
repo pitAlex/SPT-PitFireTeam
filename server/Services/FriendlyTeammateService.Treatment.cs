@@ -20,7 +20,15 @@ public partial class FriendlyTeammateService
             if (teammate.Health == null) throw new FriendlyTeammateException("ProfileHealingUnavailable");
             AdvanceTeammateRecovery(sessionId, teammate);
             var response = TreatmentSnapshot(sessionId, teammate, request.SyncPayment);
-            if (!quote) return response;
+            if (request.IncludeMedkits)
+                response.EligibleMedkitIds = AvailableTreatmentMedkits(GetPlayerProfile(sessionId)).Select(item => item.Id.ToString()).ToList();
+            if (!quote)
+            {
+                var receipt = storage.Read<FriendlyTeammateTreatmentJournal>(sessionId, TreatmentDocument);
+                if (request.SyncPayment && receipt != null && receipt.Token == request.QuoteToken && receipt.Aid == request.Aid)
+                    return TreatmentReceipt(sessionId, teammate, receipt);
+                return response;
+            }
             if (FriendlyModeRequestGate.HasActiveRaid) throw new FriendlyTeammateException("SettingsUnavailableDuringRaid");
             var existing = storage.Read<FriendlyTeammateTreatmentJournal>(sessionId, TreatmentDocument);
             // Do not replace a pending receipt after an uncertain payment response.
@@ -28,11 +36,21 @@ public partial class FriendlyTeammateService
             var journal = new FriendlyTeammateTreatmentJournal
             {
                 Token = Guid.NewGuid().ToString("N"), Aid = request.Aid!, ExpiresUtc = DateTime.UtcNow.AddMinutes(2),
-                Price = CalculateTreatmentPrice(GetPlayerProfile(sessionId), teammate.Health),
+                MedkitId = request.MedkitId,
                 HealthBefore = TreatmentHealthSignature(teammate.Health), HealthAfter = cloner.Clone(teammate.Health)!
             };
-            foreach (var name in FriendlyTeammateTreatmentPricing.BodyParts)
-                journal.HealthAfter.BodyParts![name].Health!.Current = journal.HealthAfter.BodyParts[name].Health!.Maximum;
+            if (journal.MedkitId != null)
+            {
+                journal.MedkitBefore = jsonUtil.Serialize(FindTreatmentMedkit(GetPlayerProfile(sessionId), journal.MedkitId));
+                PlanMedkitTreatment(GetPlayerProfile(sessionId), journal);
+            }
+            else
+            {
+                try { journal.Price = CalculateTreatmentPrice(GetPlayerProfile(sessionId), teammate.Health); }
+                catch (FriendlyTeammateException ex) when (ex.Message == "ProfileHealingUnavailable") { journal.Price = -1; }
+                foreach (var name in FriendlyTeammateTreatmentPricing.BodyParts)
+                    journal.HealthAfter.BodyParts![name].Health!.Current = journal.HealthAfter.BodyParts[name].Health!.Maximum;
+            }
             journal.HealthAfter.UpdateTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
             storage.Write(sessionId, TreatmentDocument, journal);
             response.Price = journal.Price;
@@ -50,7 +68,7 @@ public partial class FriendlyTeammateService
             if (journal == null || string.IsNullOrWhiteSpace(request.QuoteToken) || journal.Token != request.QuoteToken || journal.Aid != request.Aid)
                 throw new FriendlyTeammateException("ProfileHealingQuoteExpired");
             var teammate = FindTreatmentTeammate(sessionId, request.Aid);
-            if (journal.State == "complete") return TreatmentSnapshot(sessionId, teammate);
+            if (journal.State == "complete") return TreatmentReceipt(sessionId, teammate, journal);
             if (FriendlyModeRequestGate.HasActiveRaid || journal.State != "pending" || journal.ExpiresUtc <= DateTime.UtcNow)
                 throw new FriendlyTeammateException("ProfileHealingQuoteExpired");
             var player = GetPlayerProfile(sessionId);
@@ -75,37 +93,46 @@ public partial class FriendlyTeammateService
             if (TreatmentHealthSignature(expectedHealth) != TreatmentHealthSignature(teammate.Health))
                 throw new FriendlyTeammateException("ProfileHealingQuoteExpired");
             AdvanceTeammateRecovery(sessionId, teammate);
-            int currentPrice = CalculateTreatmentPrice(player, teammate.Health!);
-            if (currentPrice > journal.Price) throw new FriendlyTeammateException("ProfileHealingQuoteExpired");
-            journal.Price = currentPrice;
+            if (journal.MedkitId == null)
+            {
+                int currentPrice = CalculateTreatmentPrice(player, teammate.Health!);
+                if (currentPrice > journal.Price) throw new FriendlyTeammateException("ProfileHealingQuoteExpired");
+                journal.Price = currentPrice;
+            }
             journal.HealthBefore = TreatmentHealthSignature(teammate.Health);
             journal.HealthAfter = cloner.Clone(teammate.Health)!;
-            foreach (string part in FriendlyTeammateTreatmentPricing.BodyParts)
-                journal.HealthAfter.BodyParts![part].Health!.Current = journal.HealthAfter.BodyParts[part].Health!.Maximum;
-            if (FriendlyTeammateTreatmentPricing.MissingHealth(teammate.Health) <= 0)
+            if (journal.MedkitId != null) PlanMedkitTreatment(player, journal);
+            else foreach (string part in FriendlyTeammateTreatmentPricing.BodyParts)
+                    journal.HealthAfter.BodyParts![part].Health!.Current = journal.HealthAfter.BodyParts[part].Health!.Maximum;
+            if (FriendlyTeammateTreatmentPricing.BodyParts.All(part =>
+                teammate.Health!.BodyParts![part].Health!.Current >= teammate.Health.BodyParts[part].Health!.Maximum))
             {
                 CompleteTeammateTreatment(sessionId, journal);
-                return TreatmentSnapshot(sessionId, teammate);
+                return TreatmentReceipt(sessionId, FindTreatmentTeammate(sessionId, request.Aid), journal);
             }
 
             var payment = cloner.Clone(player)!;
-            try { DeductRoublesFromPlayerStash(payment, journal.Price); }
-            catch (FriendlyTeammateException) { throw new FriendlyTeammateException("ProfileHealingInsufficientFunds"); }
-            // Stock HealthTreatment pays Therapist, counting the payment toward her turnover.
-            payment.TradersInfo![Traders.THERAPIST].SalesSum = (payment.TradersInfo[Traders.THERAPIST].SalesSum ?? 0) + journal.Price;
-            traderHelper.LevelUp(Traders.THERAPIST, payment);
-            journal.PlayerBefore = TreatmentPlayerSignature(player);
-            journal.PlayerAfter = TreatmentPlayerSignature(payment);
+            if (journal.MedkitId != null) DeductTreatmentMedkit(payment, journal);
+            else
+            {
+                try { DeductRoublesFromPlayerStash(payment, journal.Price); }
+                catch (FriendlyTeammateException) { throw new FriendlyTeammateException("ProfileHealingInsufficientFunds"); }
+                // Stock HealthTreatment pays Therapist, counting the payment toward her turnover.
+                payment.TradersInfo![Traders.THERAPIST].SalesSum = (payment.TradersInfo[Traders.THERAPIST].SalesSum ?? 0) + journal.Price;
+                traderHelper.LevelUp(Traders.THERAPIST, payment);
+            }
+            journal.PlayerBefore = TreatmentPaymentSignature(player, journal);
+            journal.PlayerAfter = TreatmentPaymentSignature(payment, journal);
             journal.State = "paying";
             storage.Write(sessionId, TreatmentDocument, journal);
             player.Inventory = payment.Inventory;
-            player.TradersInfo![Traders.THERAPIST] = payment.TradersInfo[Traders.THERAPIST];
+            if (journal.MedkitId == null) player.TradersInfo![Traders.THERAPIST] = payment.TradersInfo![Traders.THERAPIST];
             // On failure leave the intent recoverable. Never refund a payment whose teammate
             // commit may already have succeeded, and never repeat a completed token's charge.
-            SaveTreatmentPlayerVerified(sessionId, journal.PlayerAfter);
+            SaveTreatmentPlayerVerified(sessionId, journal.PlayerAfter, journal);
             CompleteTeammateTreatment(sessionId, journal);
-            logger.Info($"[TeammateTreatment] aid={journal.Aid} price={journal.Price} receipt={journal.Token}");
-            return TreatmentSnapshot(sessionId, FindTreatmentTeammate(sessionId, request.Aid));
+            logger.Info($"[TeammateTreatment] aid={journal.Aid} price={journal.Price} medkit={journal.MedkitId ?? "none"} resource={journal.MedkitResourceUsed} receipt={journal.Token}");
+            return TreatmentReceipt(sessionId, FindTreatmentTeammate(sessionId, request.Aid), journal);
         }
     }
 
@@ -115,15 +142,15 @@ public partial class FriendlyTeammateService
         {
             var journal = storage.Read<FriendlyTeammateTreatmentJournal>(sessionId, TreatmentDocument);
             if (journal?.State != "paying") return;
-            string current = TreatmentPlayerSignature(GetPlayerProfile(sessionId));
+            string current = TreatmentPaymentSignature(GetPlayerProfile(sessionId), journal);
             if (current == journal.PlayerAfter)
             {
-                SaveTreatmentPlayerVerified(sessionId, journal.PlayerAfter!);
+                SaveTreatmentPlayerVerified(sessionId, journal.PlayerAfter!, journal);
                 CompleteTeammateTreatment(sessionId, journal);
             }
             else if (current == journal.PlayerBefore)
             {
-                SaveTreatmentPlayerVerified(sessionId, journal.PlayerBefore!);
+                SaveTreatmentPlayerVerified(sessionId, journal.PlayerBefore!, journal);
                 journal.State = "pending";
                 storage.Write(sessionId, TreatmentDocument, journal);
             }
@@ -200,10 +227,10 @@ public partial class FriendlyTeammateService
         return CreationMoneySignature(player) + "|" + jsonUtil.Serialize(new { trader.SalesSum, trader.Standing, trader.LoyaltyLevel });
     }
 
-    private void SaveTreatmentPlayerVerified(MongoId sessionId, string expected)
+    private void SaveTreatmentPlayerVerified(MongoId sessionId, string expected, FriendlyTeammateTreatmentJournal journal)
     {
         SavePlayerMoneyVerified(sessionId, CreationMoneySignature(GetPlayerProfile(sessionId)), "ProfileHealingRecoveryFailed");
-        if (TreatmentPlayerSignature(ReadSavedPlayerProfile(sessionId)!.CharacterData!.PmcData!) != expected)
+        if (TreatmentPaymentSignature(ReadSavedPlayerProfile(sessionId)!.CharacterData!.PmcData!, journal) != expected)
             throw new FriendlyTeammateException("ProfileHealingRecoveryFailed");
     }
 }

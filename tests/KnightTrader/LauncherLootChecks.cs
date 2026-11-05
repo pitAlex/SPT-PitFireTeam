@@ -125,7 +125,7 @@ internal static class LauncherLootChecks
                 module.Apply(session, map, generate, result);
                 check(result.Loot.Count() == 0, "ineligible request leaves map loot untouched");
             }
-            mode("Allegiance"); Denied(); mode("GunsForHire"); Denied(); mode("GoingRogue");
+            mode("GunsForHire"); Denied(); mode("Allegiance");
             Denied("woods"); Denied(generate: false);
             activity.GetProfileActivityRaidData(session).RaidConfiguration!.Side = SideType.Savage; Denied();
             activity.GetProfileActivityRaidData(session).RaidConfiguration!.Side = SideType.Pmc;

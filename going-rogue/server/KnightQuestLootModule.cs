@@ -30,7 +30,7 @@ public sealed class KnightQuestLootModule(FriendlyTeammateStorage storage, Frien
     ItemHelper items, InventoryHelper inventory, ICloner cloner, JsonUtil json, ISptLogger<KnightQuestLootModule> logger) : IOnLoad
 {
     internal const string Document = "knight-launcher-placement.json";
-    internal const string Mode = "GoingRogue";
+    internal const string Mode = "Allegiance";
     internal static readonly string[] Containers = [
         "container_City_SE_02_DesignStuff_00005",
         "container_City_SE_02_DesignStuff_00002",

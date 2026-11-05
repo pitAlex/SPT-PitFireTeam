@@ -6,6 +6,7 @@ using SPTarkov.DI.Annotations;
 using SPTarkov.Server.Core.Controllers;
 using SPTarkov.Server.Core.DI;
 using SPTarkov.Server.Core.Helpers.Quest;
+using SPTarkov.Server.Core.Helpers.Profile;
 using SPTarkov.Server.Core.Models.Common;
 using SPTarkov.Server.Core.Models.Eft.Common;
 using SPTarkov.Server.Core.Models.Eft.Common.Tables;
@@ -24,21 +25,29 @@ namespace pitTeam.GoingRogue.Server;
 public sealed class KnightQuestModule(CustomQuestService quests, TemplateTable templates, LocaleTable locales,
     ImageRouter images, JsonUtil json, KnightTraderAccess access, FriendlyServerSettingsService settings,
     EventOutputHolder outputs, ISptLogger<KnightQuestModule> logger,
-    CustomItemService items, GlobalTable globals) : IOnLoad
+    CustomItemService items, GlobalTable globals, ProfileHelper profiles) : IOnLoad
 {
     private static KnightQuestModule? active;
-    private bool IsGoingRogue => settings.LoadSettings().GameplayMode == "GoingRogue";
+    private Quest[] delayedQuests = [];
+    private bool IsAllegiance => settings.LoadSettings().GameplayMode == "Allegiance";
     private static bool Completed(BotBase player, string id) => player.Quests?.Any(quest =>
         quest.QId.ToString() == id && quest.Status == QuestStatusEnum.Success) == true;
     private static bool HasFollowerStanding(BotBase player) =>
         player.TradersInfo?.TryGetValue(KnightTraderCatalog.Id, out var trader) == true && trader.Standing >= 0.5;
     internal static bool CanJoinKnightRoster(BotBase player) => Completed(player, KnightQuestPolicy.Competition);
+    internal static bool CanJoinBirdeyeRoster(BotBase player) => Completed(player, KnightQuestPolicy.AFavor);
     internal static bool CanJoinBigPipeRoster(BotBase player) => Completed(player, KnightQuestPolicy.BadgeBandit) && HasFollowerStanding(player);
-    internal static bool CanJoinBirdeyeRoster(BotBase player) => Completed(player, KnightQuestPolicy.AFavor) && HasFollowerStanding(player);
 
     internal static bool CanSpawnKnight(BotBase player, string location) =>
+        CanSpawnCompanion(player, location, quest => quest == KnightQuestPolicy.Competition || quest == KnightQuestPolicy.MyLand || quest == KnightQuestPolicy.BadgeBandit);
+    internal static bool CanSpawnGoon(BotBase player, string location) =>
+        CanSpawnCompanion(player, location, quest => quest == KnightQuestPolicy.BadgeBandit || quest == KnightQuestPolicy.OffLimits);
+    internal static bool CanSpawnBirdeye(BotBase player, string location) =>
+        CanSpawnCompanion(player, location, quest => quest == KnightQuestPolicy.BadgeBandit || quest == KnightQuestPolicy.EnemySpotted || quest == KnightQuestPolicy.OffLimits || quest == KnightQuestPolicy.AFavor);
+    private static bool CanSpawnCompanion(BotBase player, string location, Func<string, bool> usesRole) =>
+        !RogueAlliance.Conflict(player) &&
         player.Info?.Level >= KnightTraderCatalog.UnlockLevel &&
-        player.Quests?.Any(quest => quest.Status == QuestStatusEnum.Started &&
+        player.Quests?.Any(quest => quest.Status == QuestStatusEnum.Started && usesRole(quest.QId.ToString()) &&
             KnightQuestPolicy.NeedsCompanion(quest.QId.ToString(), location, objective => quest.CompletedConditions?.Contains(objective) == true)) == true &&
         player.TradersInfo?.TryGetValue(KnightTraderCatalog.Id, out var trader) == true && trader.Disabled != true;
     internal static Dictionary<MongoId, Quest> ReadQuests(JsonUtil json) => Read<Dictionary<MongoId, Quest>>(json, "KnightQuests.json");
@@ -50,7 +59,7 @@ public sealed class KnightQuestModule(CustomQuestService quests, TemplateTable t
         cancellationToken.ThrowIfCancellationRequested();
         var definitions = ReadQuests(json);
         var translations = ReadLocales(json);
-        if (definitions.Count != 3 || definitions.Keys.Any(id => !KnightQuestPolicy.Owns(id.ToString())) ||
+        if (definitions.Count != 7 || definitions.Keys.Any(id => !KnightQuestPolicy.Owns(id.ToString())) ||
             definitions.Values.Any(q => q.TraderId != KnightTraderCatalog.Id || q.Image != KnightQuestPolicy.ImageFor(q.Id.ToString())) ||
             definitions.Keys.Any(templates.Quests.ContainsKey))
             throw new InvalidDataException("Invalid or duplicate Knight quest definitions.");
@@ -72,9 +81,10 @@ public sealed class KnightQuestModule(CustomQuestService quests, TemplateTable t
             var result = quests.CreateQuest(new() { NewQuest = definition, Locales = text });
             if (!result.Success) throw new InvalidDataException(string.Join("; ", result.Errors));
         }
+        delayedQuests = definitions.Values.Where(q => q.Conditions.AvailableForStart?.Any(c => c.AvailableAfter > 0) == true).ToArray();
         foreach (var (route, path) in artwork) images.AddRoute(Path.ChangeExtension(route, null), path);
         Install();
-        logger.Info("Registered Knight quests 1–3 with native objectives, rewards and quest images.");
+        logger.Info("Registered Knight quests 1–7 with native objectives, rewards and quest images.");
         return Task.CompletedTask;
     }
 
@@ -85,7 +95,11 @@ public sealed class KnightQuestModule(CustomQuestService quests, TemplateTable t
         {
             var list = typeof(QuestHelper).GetMethod(nameof(QuestHelper.GetClientQuests), [typeof(MongoId)])
                 ?? throw new MissingMethodException(nameof(QuestHelper.GetClientQuests));
-            harmony.Patch(list, postfix: new HarmonyMethod(typeof(KnightQuestModule), nameof(AfterList)));
+            harmony.Patch(list, prefix: new HarmonyMethod(typeof(KnightQuestModule), nameof(BeforeProfile)),
+                postfix: new HarmonyMethod(typeof(KnightQuestModule), nameof(AfterList)));
+            var profile = typeof(ProfileHelper).GetMethod(nameof(ProfileHelper.GetCompleteProfile), [typeof(MongoId)])
+                ?? throw new MissingMethodException(nameof(ProfileHelper.GetCompleteProfile));
+            harmony.Patch(profile, prefix: new HarmonyMethod(typeof(KnightQuestModule), nameof(BeforeProfile)));
             Patch(nameof(QuestController.AcceptQuest), [typeof(PmcData), typeof(AcceptQuestRequestData), typeof(MongoId)], nameof(BeforeAccept));
             Patch(nameof(QuestController.CompleteQuest), [typeof(PmcData), typeof(CompleteQuestRequestData), typeof(MongoId)], nameof(BeforeComplete));
             Patch(nameof(QuestController.HandoverQuest), [typeof(PmcData), typeof(HandoverQuestRequestData), typeof(MongoId)], nameof(BeforeHandover));
@@ -109,9 +123,16 @@ public sealed class KnightQuestModule(CustomQuestService quests, TemplateTable t
     }
     private static void AfterList(ref List<Quest> __result)
     {
-        if (active?.IsGoingRogue != true)
+        if (active?.IsAllegiance != true)
             __result = __result.Where(q => !KnightQuestPolicy.Owns(q.Id.ToString())).ToList();
     }
+    private void SynchronizeWaits(BotBase? player)
+    {
+        if (IsAllegiance && player != null && KnightQuestWaits.Synchronize(player, delayedQuests))
+            logger.Info($"[GoingRogueQuests] Synchronized prerequisite-based quest waits profile={player.Id}");
+    }
+    private void SynchronizeWaits(MongoId sessionId) => SynchronizeWaits(profiles.GetPmcProfile(sessionId));
+    private static void BeforeProfile(MongoId sessionId) => active?.SynchronizeWaits(sessionId);
     private bool Admit(MongoId quest, MongoId session, ref ItemEventRouterResponse result)
     {
         if (!KnightQuestPolicy.Owns(quest.ToString()) || access.CanTrade(session)) return true;
@@ -119,8 +140,13 @@ public sealed class KnightQuestModule(CustomQuestService quests, TemplateTable t
         access.Admit(KnightTraderCatalog.Id, session, result);
         return false;
     }
-    private static bool BeforeAccept(AcceptQuestRequestData acceptedQuest, MongoId sessionID, ref ItemEventRouterResponse __result) =>
-        active?.Admit(acceptedQuest.QuestId, sessionID, ref __result) ?? !KnightQuestPolicy.Owns(acceptedQuest.QuestId.ToString());
+    private static bool BeforeAccept(PmcData pmcData, AcceptQuestRequestData acceptedQuest, MongoId sessionID, ref ItemEventRouterResponse __result)
+    {
+        if (active == null) return !KnightQuestPolicy.Owns(acceptedQuest.QuestId.ToString());
+        if (!active.Admit(acceptedQuest.QuestId, sessionID, ref __result)) return false;
+        if (KnightQuestPolicy.Owns(acceptedQuest.QuestId.ToString())) active.SynchronizeWaits(pmcData);
+        return true;
+    }
     private static bool BeforeComplete(CompleteQuestRequestData request, MongoId sessionId, ref ItemEventRouterResponse __result) =>
         active?.Admit(request.QuestId, sessionId, ref __result) ?? !KnightQuestPolicy.Owns(request.QuestId.ToString());
     private static bool BeforeHandover(HandoverQuestRequestData request, MongoId sessionID, ref ItemEventRouterResponse __result) =>

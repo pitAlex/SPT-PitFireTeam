@@ -39,6 +39,8 @@ namespace pitTeam.BigBrain
         private bool cachedSafetyBlocked;
         private bool cachedMemoryOnly;
         private bool cachedHasReliableLocation;
+        private bool cachedCommanderAdvance;
+        private bool cachedRequiresCohesion;
         private string lastRecordedSignature = string.Empty;
 
         public FollowerCombatRiflemanEngagement(BotOwner botOwner, FollowerCombatCommon combatCommon)
@@ -112,15 +114,19 @@ namespace pitTeam.BigBrain
             public bool IsLowThreat => ThreatAdjustment < LowThreatStyleThreshold;
         }
 
-        public Evaluation Evaluate(EnemyInfo goalEnemy)
+        public Evaluation Evaluate(EnemyInfo goalEnemy) => Evaluate(goalEnemy, false);
+
+        internal Evaluation Evaluate(EnemyInfo goalEnemy, bool commanderAdvance)
         {
             float effectiveAggression = combatCommon.GetAggression01() * 100f;
             float determination = BossPlayers.Instance?.GetFollower(botOwner)?.EffectiveSelfDetermination ?? 50f;
             Vector3 botPosition = botOwner.Position;
             Vector3 enemyPosition = FollowerCombatCommon.GetEnemyAnchor(goalEnemy);
-            Vector3 bossPosition = combatCommon.GetRealBossPosition();
+            Vector3 bossPosition = FollowerCombatAnchor.TryGetCompanionLeader(botOwner, out var commander)
+                ? commander.Position : combatCommon.GetRealBossPosition();
             string enemyProfileId = goalEnemy?.ProfileId ?? string.Empty;
             bool combatIndependent = FollowerCombatAnchor.IsCombatIndependent(botOwner);
+            bool requiresCohesion = FollowerCombatAnchor.CanAutomaticallyRegroup(botOwner);
             bool safetyBlocked = combatCommon.IsFollowerCriticallyWounded() ||
                                  combatCommon.HasActiveOrPendingHealWork() ||
                                  botOwner.Memory.IsUnderFire ||
@@ -128,7 +134,8 @@ namespace pitTeam.BigBrain
             bool memoryOnly = goalEnemy == null || Enemy.IsMemoryOnlyAcquisitionWithoutPersonalContact(goalEnemy);
             bool hasReliableLocation = goalEnemy != null && combatCommon.HasReliablePersonalEnemyLocation(goalEnemy);
 
-            if (Mathf.Approximately(cachedDetermination, determination) && CanReuse(
+            if (cachedCommanderAdvance == commanderAdvance && cachedRequiresCohesion == requiresCohesion &&
+                Mathf.Approximately(cachedDetermination, determination) && CanReuse(
                     enemyProfileId,
                     botPosition,
                     enemyPosition,
@@ -153,7 +160,9 @@ namespace pitTeam.BigBrain
                 combatIndependent,
                 safetyBlocked,
                 memoryOnly,
-                hasReliableLocation);
+                hasReliableLocation,
+                commanderAdvance,
+                requiresCohesion);
 
             cachedEvaluation = evaluation;
             cachedEnemyProfileId = enemyProfileId;
@@ -169,6 +178,8 @@ namespace pitTeam.BigBrain
             cachedSafetyBlocked = safetyBlocked;
             cachedMemoryOnly = memoryOnly;
             cachedHasReliableLocation = hasReliableLocation;
+            cachedCommanderAdvance = commanderAdvance;
+            cachedRequiresCohesion = requiresCohesion;
             hasCachedEvaluation = true;
             RecordTransition(goalEnemy, evaluation);
             return evaluation;
@@ -213,25 +224,29 @@ namespace pitTeam.BigBrain
             bool combatIndependent,
             bool safetyBlocked,
             bool memoryOnly,
-            bool hasReliableLocation)
+            bool hasReliableLocation,
+            bool commanderAdvance,
+            bool requiresCohesion)
         {
+            // Independence removes human pull; a living companion commander still
+            // owns positional cohesion, including for members at 100% determination.
             float directBossDistance = FollowerCombatCommon.IsFinite(bossPosition)
                 ? Vector3.Distance(botPosition, bossPosition)
                 : 0f;
             float regroupTriggerDistance = GetEffectiveRegroupTriggerDistance();
             float currentBossPathDistance = 0f;
-            bool currentBossPathComplete = combatIndependent ||
+            bool currentBossPathComplete = !requiresCohesion ||
                                            TryGetPathDistance(botPosition, bossPosition, out currentBossPathDistance);
-            float currentBossDistance = combatIndependent
+            float currentBossDistance = !requiresCohesion
                 ? 0f
                 : currentBossPathComplete
                     ? FollowerCombatCommon.GetSafeRegroupDistance(currentBossPathDistance, directBossDistance)
                     : directBossDistance;
-            bool urbanDetour = !combatIndependent &&
+            bool urbanDetour = requiresCohesion &&
                                currentBossPathComplete &&
                                CombatDistanceConfiguration.Instance.IsUrbanDetourRegroup(directBossDistance, currentBossPathDistance) &&
                                FollowerCombatRegroupObjective.IsSameBossLevel(botPosition, bossPosition);
-            bool outsideRegroupEnvelope = !combatIndependent &&
+            bool outsideRegroupEnvelope = requiresCohesion &&
                                           !urbanDetour &&
                                           currentBossDistance > regroupTriggerDistance;
 
@@ -300,12 +315,12 @@ namespace pitTeam.BigBrain
             string blockReason = GetBlockReason(
                 goalEnemy,
                 safetyBlocked,
-                memoryOnly,
-                hasReliableLocation,
+                memoryOnly && !commanderAdvance,
+                hasReliableLocation || commanderAdvance,
                 pathsComplete,
                 weaponThreatPolicy);
-            bool allowsEngagement = string.IsNullOrEmpty(blockReason) && effectiveAggression >= requiredAggression;
-            if ((BossPlayers.Instance?.GetFollower(botOwner)?.EffectiveSelfDetermination ?? 50f) <= 0f &&
+            bool allowsEngagement = string.IsNullOrEmpty(blockReason) && (commanderAdvance || effectiveAggression >= requiredAggression);
+            if (!commanderAdvance && (BossPlayers.Instance?.GetFollower(botOwner)?.EffectiveSelfDetermination ?? 50f) <= 0f &&
                 projectedBossPathDistance > regroupTriggerDistance && projectedBossPathDistance > currentBossDistance)
             { allowsEngagement = false; blockReason = "closeEscort"; }
             Outcome outcome;
@@ -313,7 +328,7 @@ namespace pitTeam.BigBrain
             if (allowsEngagement)
             {
                 outcome = Outcome.Engage;
-                reason = "scorePassed";
+                reason = commanderAdvance ? "commanderAdvance" : "scorePassed";
             }
             else if (outsideRegroupEnvelope &&
                      !combatCommon.ShouldDeferAutonomousRegroupAfterRecentFight(
@@ -507,6 +522,9 @@ namespace pitTeam.BigBrain
                     playerPullAdjustment = evaluation.PlayerPullAdjustment,
                     currentPlayerDistance = evaluation.CurrentBossDistance,
                     projectedPlayerDistance = evaluation.ProjectedBossDistance,
+                    anchorProfileId = FollowerCombatAnchor.TryGetCompanionLeader(botOwner, out var leader) ? leader.ProfileId : null,
+                    currentAnchorDistance = evaluation.CurrentBossDistance,
+                    projectedAnchorDistance = evaluation.ProjectedBossDistance,
                     regroupTriggerDistance = evaluation.RegroupTriggerDistance,
                     enemyGroupSize = evaluation.EnemyGroupSize,
                     equipmentPowerRatio = evaluation.EquipmentPowerRatio,

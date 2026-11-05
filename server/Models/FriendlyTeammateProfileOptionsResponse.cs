@@ -3,6 +3,7 @@ namespace pitTeam.Server.Models;
 public record FriendlyTeammateProfileOptionsResponse
 {
     public bool ProficiencyOnly { get; set; }
+    public bool LockCombatSettings { get; set; }
     public bool HideSkills { get; set; }
     public bool HideRaidStats { get; set; }
     public List<string> VisibleSkills { get; set; } = [];

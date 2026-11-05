@@ -117,6 +117,16 @@ namespace pitTeam.BigBrain
             try
             {
                 BotFollowerPlayer? followerData = BossPlayers.Instance?.GetFollower(BotOwner);
+                if (followerData?.TeamSplitHandoffPending == true)
+                {
+                    ActivatePrimaryObjective("TeamSplit");
+                    followerData.ClearOrderedPushTargetLock("TeamSplit");
+                    FollowerCombatTargetCommitments.ClearMission(BotOwner, null, "TeamSplit");
+                    combatCommon.ClearCommittedPosition("TeamSplit");
+                    combatCommon.ClearCommittedMovement("TeamSplit");
+                    combatCommon.ClearCommittedCover("TeamSplit");
+                    followerData.CompleteTeamSplitHandoff();
+                }
                 if (TryConsumeCombatGestureCommand(followerData, goalEnemy, out AICoreActionResult<BotLogicDecision, CoreActionResultParams> commandDecision))
                 {
                     combatCommon.ClearDecisionTransition();
@@ -193,6 +203,19 @@ namespace pitTeam.BigBrain
 
             BotFollowerPlayer? followerData = BossPlayers.Instance?.GetFollower(BotOwner);
             EnemyInfo? goalEnemy = BotOwner.Memory?.GoalEnemy;
+
+            if (followerData?.TeamSplitHandoffPending == true &&
+                combatCommon.HasActiveCombatEnemy(goalEnemy) && CanInterruptForRegroupOrder(currentDecision) &&
+                !combatCommon.HasActiveOrPendingHealWork() && BotOwner.GetPlayer?.MovementContext?.IsGrounded == true &&
+                !BotOwner.Memory.IsUnderFire &&
+                !FollowerCombatCommon.WasHitRecently(BotOwner, 0.75f) &&
+                BotOwner.WeaponManager?.Reload?.Reloading != true &&
+                BotOwner.WeaponManager?.Selector?.IsChanging != true &&
+                BotOwner.WeaponManager?.Grenades?.ThrowindNow != true &&
+                BotOwner.WeaponManager?.Grenades?.ReadyToThrow != true &&
+                combatCommon.TryPrepareDecisionTransition(currentDecision, "teamSplitHandoff",
+                    new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(BotLogicDecision.holdPosition, "teamSplitHandoff")))
+                return new AICoreActionEnd("teamSplitHandoff", true);
 
             // Target handoff is a shared transient hold, independent of whichever tactic/objective
             // happened to own the killed target. Route its bounded scanner before tactic-specific

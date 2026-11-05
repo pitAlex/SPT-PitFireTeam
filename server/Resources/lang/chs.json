@@ -241,8 +241,8 @@
   "socialUi": {
     "GoingRogueKnightTraderName": "骑士",
     "GoingRogueKnightTraderLocation": "未知",
-    "GoingRogueKnightTraderDescription": "三名游荡者首领的队长。在 Going Rogue 模式中达到20级后可解锁。",
-    "GoingRogueKnightTraderLocked": "骑士仅在 Going Rogue 模式中达到20级后可用。",
+    "GoingRogueKnightTraderDescription": "三名游荡者首领的队长。在 Allegiance 模式中达到20级后可解锁。",
+    "GoingRogueKnightTraderLocked": "骑士仅在 Allegiance 模式中达到20级后可用。",
     "ProfileHeal": "治疗",
     "TeammateStillWounded": "{0} 仍然受伤，暂时无法加入战局",
     "ProfileHealingTitle": "医疗站治疗",
@@ -385,6 +385,7 @@
     "RemoveRecruitedTeammatePrompt": "确定要移除招募的队员 {0} 吗？\n解雇费用：{1} ₽\n已装备的物品将通过快递服务邮寄。\n此操作无法撤销",
     "TeammateDeleteInsufficientFunds": "资金不足，无法执行此操作。",
     "TeammateDeleteFailed": "无法完成队员删除。请重试；已完成的删除不会重复扣款。",
+    "CompanionRemovalLocked": "无法将此同伴从队伍名单中移除。",
     "TeammateDeleteRecoveryFailed": "无法核实上次删除队员的付款状态。为防止错误扣款，已阻止删除。",
     "TeammateDeleteDeliveryFailed": "队员已移除，但装备配送尚未完成。请重新打开“我的小队”以重试配送。如问题持续，请重启服务器。",
     "RemovedTeammateEquipmentDelivery": "已移除队员的装备现可领取。",

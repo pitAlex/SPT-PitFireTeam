@@ -8,14 +8,15 @@ namespace pitTeam.GoingRogue.Combat
 {
     internal static class GoonCombatThreat
     {
-        internal static bool IsLowThreat(BotOwner owner, EnemyInfo enemy, FollowerCombatCommon common)
+        internal static bool IsLowThreat(BotOwner owner, EnemyInfo enemy, FollowerCombatCommon common,
+            bool allowReportedContact = false)
         {
             if (enemy == null || !common.HasActiveCombatEnemy(enemy)) return false;
             var role = enemy.Person?.Profile?.Info?.Settings?.Role;
             if (!role.HasValue || GoonCombatConfidence.PowerMultiplier(role.Value.ToString()) == 1f)
                 return common.IsEnemyLowThreat(enemy, ignoreEquip: false, maximumEnemies: 2f);
 
-            if (Enemy.IsMemoryOnlyAcquisitionWithoutPersonalContact(enemy) ||
+            if ((!allowReportedContact && Enemy.IsMemoryOnlyAcquisitionWithoutPersonalContact(enemy)) ||
                 !FollowerEnemyTracking.TryGetKnownPosition(enemy, out _, out _) ||
                 common.ShouldBlockProactiveAutoPushForWeaponThreat(enemy)) return false;
 

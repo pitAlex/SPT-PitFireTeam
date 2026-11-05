@@ -1,5 +1,6 @@
 using DrakiaXYZ.BigBrain.Brains;
 using EFT;
+using pitTeam.Modules;
 using System;
 
 namespace pitTeam.BigBrain.Actions
@@ -24,14 +25,35 @@ namespace pitTeam.BigBrain.Actions
                 BotOwner.SetPose(1f);
             }
 
-            if (ShouldRunToPoint(data))
+            string? reason = GetReason(data);
+            bool controlledApproach = reason != null &&
+                (reason.StartsWith("knight.", StringComparison.Ordinal) || reason.StartsWith("bigPipe.", StringComparison.Ordinal)) &&
+                (reason.IndexOf(".walkToPoint", StringComparison.Ordinal) >= 0 || reason.IndexOf(".runToPoint", StringComparison.Ordinal) >= 0);
+            bool run = ShouldRunToPoint(data);
+            if (!controlledApproach)
+            {
+                if (run)
+                {
+                    BotOwner.SetTargetMoveSpeed(1f);
+                    SetCombatSprint(true);
+                    BotOwner.SetPose(1f);
+                }
+                baseLogic.UpdateNodeByBrain(GetData<CoreActionResultGoToPoint>(data));
+                return;
+            }
+            // Native go-to-point updates can overwrite sprint. The admitted aggressor policy
+            // owns the final run/walk choice only for its explicitly marked point decisions.
+            baseLogic.UpdateNodeByBrain(GetData<CoreActionResultGoToPoint>(data));
+            run = run && BotOwner.Memory?.GoalEnemy is { } enemy && FollowerEnemyTracking.Distance(enemy) > 30f;
+            run = run && BotOwner.CanSprintPlayer && BotOwner.Mover?.NoSprint != true;
+            if (run)
             {
                 BotOwner.SetTargetMoveSpeed(1f);
                 SetCombatSprint(true);
                 BotOwner.SetPose(1f);
             }
 
-            baseLogic.UpdateNodeByBrain(GetData<CoreActionResultGoToPoint>(data));
+            else SetCombatSprint(false);
         }
 
         private static bool ShouldRunToPoint(CustomLayer.ActionData data)

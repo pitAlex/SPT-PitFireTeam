@@ -4,6 +4,9 @@ $source = Get-Content -Raw (Join-Path $RepositoryRoot 'client/Patches/BotsContro
 $start = $source.IndexOf('    internal class BossSpawnWaveManagerClassPatch')
 $method = [regex]::Match($source.Substring($start), '(?ms)^        private static bool PatchPrefix\(BossSpawnScenario __instance\).*?^        \}').Value
 if (!$method) { throw 'Missing production boss-wave gate' }
+$props = Get-Content -Raw (Join-Path $RepositoryRoot 'client/Utils/Props.cs')
+if ($props.Substring($props.IndexOf('public static Dictionary<WildSpawnType, List<string>> QuestBosses')).Contains('bossPartisan')) { throw 'Tripwire must not force Partizan through the legacy quest-wave override' }
+if (Test-Path (Join-Path $RepositoryRoot 'going-rogue/client/Quests/PartizanQuestSpawn.cs')) { throw 'Partizan quest spawn override must remain removed' }
 $block = $source.IndexOf('spawner.SetBlockedRoles(blocked.Concat(new[] { "bossKnight", "followerBirdEye", "followerBigPipe" })')
 $spawn = $source.IndexOf('Modules.Logger.LogInfo("Start Squad Spawn")')
 if ($block -lt 0 -or $block -gt $spawn) { throw 'Native role blocking must precede saved-profile spawning' }
@@ -29,7 +32,7 @@ $fixture = @'
 using System;
 using System.Collections.Generic;
 using System.Linq;
-public enum WildSpawnType { bossKnight, bossOther }
+public enum WildSpawnType { bossKnight, bossOther, bossKolontay, bossPartisan }
 public enum EPlayerSide { Usec, Savage }
 public enum EQuestStatus { Started }
 public class AbstractGame {}
@@ -44,7 +47,7 @@ public class BossSpawnScenario { public List<Wave> BossSpawnWaves=new List<Wave>
 public static class GameplayModeAddons { public static bool HasSelectedBossCompanions; }
 namespace Utils {
     public static class Utils { public static bool Quest;public static bool FlagGet(string flag)=>Quest; }
-    public static class Props { public static Dictionary<WildSpawnType,List<string>> QuestBosses=new Dictionary<WildSpawnType,List<string>>{{WildSpawnType.bossKnight,new List<string>{"quest"}}}; }
+    public static class Props { public static Dictionary<WildSpawnType,List<string>> QuestBosses=new Dictionary<WildSpawnType,List<string>>{{WildSpawnType.bossKnight,new List<string>{"quest"}},{WildSpawnType.bossKolontay,new List<string>{"quest"}}}; }
 }
 public class Fixture {
 __METHOD__
@@ -63,6 +66,15 @@ __METHOD__
         Check(normal.ShallSpawn&&normal.ForceSpawn,"ordinary Goons remain available without selected companion");
         Utils.Utils.Quest=true;normal.ShallSpawn=false;PatchPrefix(new BossSpawnScenario{BossSpawnWaves=new List<Wave>{normal}});
         Check(normal.ShallSpawn,"legacy quest override still works outside companion raids");
+        GameplayModeAddons.HasSelectedBossCompanions=true;
+        var kollontay=new Wave{BossType=WildSpawnType.bossKolontay,ShallSpawn=false,ForceSpawn=false};
+        PatchPrefix(new BossSpawnScenario{BossSpawnWaves=new List<Wave>{kollontay}});
+        Check(kollontay.ShallSpawn,"automatic Goon quest raid enables its native Kollontay wave while blocking hostile Goons");
+        foreach(bool nativeSpawn in new[]{false,true}) {
+            var partisan=new Wave{BossType=WildSpawnType.bossPartisan,ShallSpawn=nativeSpawn,ForceSpawn=nativeSpawn};
+            PatchPrefix(new BossSpawnScenario{BossSpawnWaves=new List<Wave>{partisan}});
+            Check(partisan.ShallSpawn==nativeSpawn && partisan.ForceSpawn==nativeSpawn,"Partizan keeps the native wave decision during quest companion raids");
+        }
         Console.WriteLine("PASS: "+checks+" production Goons wave checks; native role gate precedes saved-profile spawning.");
     }
 }

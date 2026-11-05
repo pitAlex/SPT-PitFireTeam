@@ -4,11 +4,13 @@
     <ImplicitUsings>enable</ImplicitUsings><Nullable>annotations</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../going-rogue/client/Combat/GoonAssaultPolicy.cs" Link="GoonAssaultPolicy.cs" />
     <Compile Include="../../going-rogue/client/Combat/BirdEyeCombatLayer.cs" Link="BirdEyeCombatLayer.cs" />
     <Compile Include="../../going-rogue/client/Combat/BirdEyeNativePatches.cs" Link="BirdEyeNativePatches.cs" />
     <Compile Include="../../going-rogue/client/Combat/BirdEyeCombatLogic.cs" Link="BirdEyeCombatLogic.cs" />
     <Compile Include="../../going-rogue/client/Combat/BirdEyeCombatObjective.cs" Link="BirdEyeCombatObjective.cs" />
     <Compile Include="../../going-rogue/client/Combat/BirdEyeSniperPositioning.cs" Link="BirdEyeSniperPositioning.cs" />
+    <Compile Include="../../going-rogue/client/Combat/BirdEyeSupportPriority.cs" Link="BirdEyeSupportPriority.cs" />
     <Compile Include="../../going-rogue/client/Combat/KnightCombatObjective.cs" Link="KnightCombatObjective.cs" />
     <Compile Include="../../going-rogue/client/Combat/GoonCombatObjective.cs" Link="GoonCombatObjective.cs" />
     <Compile Include="../../going-rogue/client/Combat/GoonIndependentPursuit.cs" Link="GoonIndependentPursuit.cs" />
@@ -17,6 +19,10 @@
     <Compile Include="../../going-rogue/client/Combat/BigPipeVanillaCombat.cs" Link="BigPipeVanillaCombat.cs" />
     <Compile Include="../../going-rogue/client/Combat/BigPipeCombatObjective.cs" Link="BigPipeCombatObjective.cs" />
     <Compile Include="../../going-rogue/client/Combat/BigPipeCombatLogic.cs" Link="BigPipeCombatLogic.cs" />
+    <Compile Include="../../going-rogue/client/Combat/ExUsecCombatExtension.cs" Link="ExUsecCombatExtension.cs" />
+    <Compile Include="../../going-rogue/client/Combat/ExUsecCombatLayer.cs" Link="ExUsecCombatLayer.cs" />
+    <Compile Include="../../going-rogue/client/Combat/ExUsecCombatObjective.cs" Link="ExUsecCombatObjective.cs" />
+    <Compile Include="../../going-rogue/client/Combat/RoguePositionCoordinator.cs" Link="RoguePositionCoordinator.cs" />
     <Compile Include="../../going-rogue/client/Combat/GoonCombatScope.cs" Link="GoonCombatScope.cs" />
     <Compile Include="../../going-rogue/client/GoonCombatConfidence.cs" Link="GoonCombatConfidence.cs" />
     <Compile Include="../../going-rogue/client/Combat/GoonCombatThreat.cs" Link="GoonCombatThreat.cs" />

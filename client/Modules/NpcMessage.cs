@@ -116,7 +116,7 @@ namespace pitTeam.Modules
             {
                 if (((Dictionary<string, object>)item.Value)["SquadInfo"] is Dictionary<string, object> squadInfo)
                 {
-                    if ((string)squadInfo["AllyBoss"] != null)
+                    if (IsBoss(squadInfo))
                         bosses.Add(item.Key);
                     else if (!(bool)squadInfo["Mate"])
                         allies.Add(item.Key);
@@ -131,6 +131,9 @@ namespace pitTeam.Modules
 
             return null;
         }
+
+        private static bool IsBoss(Dictionary<string, object> squadInfo) =>
+            squadInfo.TryGetValue("AllyBoss", out var role) && !string.IsNullOrWhiteSpace(role as string);
 
         public static void NpcSendThankYou(string? id = null)
         {
@@ -148,7 +151,7 @@ namespace pitTeam.Modules
                 {
                     if (((Dictionary<string, object>)item.Value)["SquadInfo"] is Dictionary<string, object> squadInfo)
                     {
-                        if ((string)squadInfo["AllyBoss"] != null)
+                        if (IsBoss(squadInfo))
                             bosses.Add(item.Value);
                         else if (!(bool)squadInfo["Mate"])
                             allies.Add(item.Value);

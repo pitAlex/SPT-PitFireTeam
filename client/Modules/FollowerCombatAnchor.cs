@@ -46,15 +46,22 @@ namespace pitTeam.Modules
 
         public static bool IsCombatIndependent(BotOwner botOwner)
         {
-            return BossPlayers.Instance?.GetFollower(botOwner)?.CombatIndependent == true;
+            var follower = BossPlayers.Instance?.GetFollower(botOwner);
+            return follower?.CombatIndependent == true && !follower.TryGetTeamSplitHelpEnemy(out _);
         }
+
+        // Combat independence removes the human leash, not cohesion with another
+        // living unit leader. A commander anchored to himself remains independent.
+        public static bool CanAutomaticallyRegroup(BotOwner botOwner)
+            => !IsCombatIndependent(botOwner) ||
+               TryGetCompanionLeader(botOwner, out var leader) && leader != botOwner;
 
         public static bool TryGetCompanionLeader(BotOwner botOwner, out BotOwner leader)
         {
             leader = null;
             if (ShouldUseRealBossAnchor(botOwner)) return false;
             var follower = BossPlayers.Instance?.GetFollower(botOwner);
-            var candidate = follower?.CompanionCombatLeader;
+            var candidate = follower?.TeamSplitCombatActive == true ? follower.TeamSplitCommander : follower?.CompanionCombatLeader;
             if (candidate == null || candidate.IsDead || candidate.BotState != EBotState.Active ||
                 candidate.GetPlayer?.HealthController?.IsAlive != true || !IsFinite(candidate.Position) ||
                 follower.GetBoss() == null ||
@@ -72,9 +79,11 @@ namespace pitTeam.Modules
         {
             BotFollowerPlayer? follower = BossPlayers.Instance?.GetFollower(botOwner);
             return follower == null ||
-                   !follower.CombatIndependent ||
+                   follower.TryGetTeamSplitHelpEnemy(out _) ||
+                   !follower.CombatIndependent && !follower.CompanionLeaderControlsPosition ||
                    follower.CombatRegroupUsesBossAnchor ||
-                   follower.CompanionCombatLeader != null && follower.TryPeekActiveCommand(out _, out _, out _);
+                   (follower.CompanionCombatLeader != null || follower.TeamSplitCommander != null) &&
+                   follower.TryPeekActiveCommand(out _, out _, out _);
         }
 
         private static bool TryGetClosestFollowerAnchor(BotOwner botOwner, out Vector3 position)

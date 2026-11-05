@@ -62,7 +62,10 @@ internal sealed class SAINFollowerPushObjective(BotComponent bot)
         Follower?.TryConsumeOrderedPushCancelRequest(out _);
         string id = order?.EnemyProfileId ?? bot.BotOwner.Memory?.GoalEnemy?.ProfileId;
         if (string.IsNullOrEmpty(id) || bot.BotOwner.Memory?.GoalEnemy?.ProfileId != id) return;
-        if (Active && EnemyId == id) { Mode = SAINPushMode.Ordered; Record("orderedAgain"); return; }
+        // Preserve productive movement and already-ordered failure budgets. The
+        // first player order gets a fresh attempt after an automatic push failed.
+        if (Active && EnemyId == id && (Ordered || !Exhausted))
+        { Mode = SAINPushMode.Ordered; Record("orderedAgain"); return; }
         bool reported = order.HasValue && TryReportCommandedPosition(order.Value);
         Begin(SAINPushMode.Ordered, id);
         if (reported && SainCombatRecorderBridge.IsRecording)

@@ -59,8 +59,21 @@ internal static class CompanionRaidPreparationTests
             Reject(()=>Quest(session,token,"followerBigPipe",configuration),"quest reservation cannot spawn a different role");
             Reject(()=>Quest(session,token,"bossKnight",configuration with {Location="woods"}),"quest reservation rejects a changed map");
             Reject(()=>Quest(session,token,"bossKnight",configuration with {TimeVariant=DateTimeEnum.PAST}),"quest reservation rejects a changed time");
+            var temporary = (IDictionary)type.GetProperty("QuestCompanions")!.GetValue(preparation)!;
+            foreach (string role in new[]{"bossKnight","followerBigPipe","followerBirdEye"})
+            {
+                var native = new FastCloner().Clone(kit)!;
+                native.Id = new MongoId();
+                native.Info!.Settings!.Role = role;
+                temporary[role] = native;
+                var displayed = Quest(session,token,role,configuration);
+                check(json.Serialize(displayed)==json.Serialize(native),"multi-Goon spawn consumes the exact reserved "+role+" profile");
+                displayed.Inventory!.Items!.RemoveAt(1);
+                check(json.Serialize(Quest(session,token,role,configuration))==json.Serialize(native),"multi-Goon reservation remains immutable for "+role);
+            }
+            check(temporary.Count==3,"all three temporary quest profiles coexist in one loading attempt");
             service.PrepareCompanionRaid(session,request);
-            check(type.GetProperty("QuestCompanion")!.GetValue(preparation)==null,"a selected teammate removes the automatic ally reservation");
+            check(type.GetProperty("QuestCompanion")!.GetValue(preparation)==null && temporary.Count==0,"a selected teammate removes every automatic ally reservation");
             result.Inventory!.Items!.RemoveAt(1);
             var retry = (BotBase)spawn.Invoke(service,[session,current,null,token])!;
             check(json.Serialize(retry.Inventory)==json.Serialize(kit.Inventory),"spawn mutations cannot alter the reserved kit or a retry");

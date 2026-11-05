@@ -169,11 +169,12 @@ public sealed class TeammateDatabase
             var collection = database.GetCollection("documents");
             InTransaction(database, () =>
             {
-                // Keep migration complete so preserved legacy JSONs cannot restore the old squad.
-                string import = Read(collection, ImportKey)
-                    ?? throw new InvalidDataException($"Teammate database migration marker is missing: {DatabasePath}");
+                // Retained legacy stores must never resurrect a wiped squad.
+                var migrations = ReadAll(collection, name => name.StartsWith("migration/", StringComparison.Ordinal));
+                if (!migrations.ContainsKey(ImportKey))
+                    throw new InvalidDataException($"Teammate database migration marker is missing: {DatabasePath}");
                 collection.DeleteAll();
-                Write(collection, ImportKey, import);
+                foreach (var entry in migrations) Write(collection, entry.Key, entry.Value);
                 return true;
             });
         }

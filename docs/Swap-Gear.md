@@ -4,6 +4,8 @@ The shared staged exchange engine also supports headless [command-loot upgrades 
 
 Core owns the manual in-raid editor. This is separate from add-only commanded [looting](looting/Looting.md) and the out-of-raid [loadout editor](Loadout-Management.md).
 
+Give Gear uses the same edit/replay engine with final validation scoped to accepted changed items and affected container layouts; see [Give Gear](Give-Gear-Spec.md). Manual Swap Gear keeps full-inventory equality because both inventories are editable.
+
 ## Interaction and draft
 
 - Same 2.5 m / 18-degree targeting as View Backpack; eligible targets are the player's living active spawned squad followers. No backpack required. Field recruits cannot use Swap Gear: this prevents stripping a recruited friendly's kit before abandoning them. The existing saved/transit-aware `IsSpawnedSquadMate` identity gates both the prompt and session safety checks, including direct/bound commands and Apply revalidation. Recruitment or a later squad invitation alone does not grant access during the recruitment raid; accepted roster members become eligible when spawned as teammates in a later raid.
@@ -91,7 +93,7 @@ Return tracking includes descendant fallback IDs for plates, attachments and mag
 
 ## Qualification
 
-2026-10-20 release cleanup: retired the temporary `GearSwapInsuranceDiagnostics` observer, its per-item session/icon calls and the observer-only fixture. `Verify-GearSwapInsurance.ps1` now guards preserved exact-raid shield display, native-policy separation, final gifted-ID exclusion and absence of retired snapshots. Functional insurance tests remain; historical diagnostic sections below describe old builds only. Give Gear history now lives in its [validation ledger](validation/Give-Gear.md).
+2026-10-20 release cleanup: retired the temporary `GearSwapInsuranceDiagnostics` observer, its per-item session/icon calls and the observer-only fixture. `Verify-GearSwapInsurance.ps1` now guards preserved exact-raid shield display, native-policy separation, final gifted-ID exclusion and absence of retired snapshots. Functional insurance tests remain; historical diagnostic sections below describe old builds only. Give Gear history now lives in its validation ledger (historical notes retained in Git).
 
 2026-10-14 expanded container editing: the previous sealed-backpack policy is removed. The production-derived access/replay fixture passes 122 assertions; the draft controller passes 88, including repeated pocket/backpack transfers without native async execution; the clone-scoped normal-pockets/special-panel fixture passes 10. Together with plate, hands, body, snapshot, Apply protection, admission/reload-start, quick-interaction, reload-reserve and return-policy suites, 516 assertions pass. Installed `SearchableSlotView.CreateSlots(Item)` and its special-panel field are verified; the Debug core build has zero warnings/errors. View Backpack production code is unchanged. Not deployed or raid-qualified: normal pocket/backpack presentation, nested Open, staged Apply/cancel and immediate View Backpack transfers still require in-game confirmation. The old sealed-backpack presentation helper and its obsolete fixture are removed; Git retains their history.
 

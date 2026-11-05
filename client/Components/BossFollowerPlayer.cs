@@ -29,6 +29,7 @@ namespace pitTeam.Components
         public BossFollowerPlayer(BotOwner bot, pitAIBossPlayer player, WildSpawnType bossRole,
             bool savedCombatPreferences = false) : base(bot, player, false, bossRole)
         {
+            IsRosterMember = savedCombatPreferences;
             UsesSavedCombatPreferences = savedCombatPreferences;
 
             NpcMessage.RemoveNpc(bot.ProfileId, false);

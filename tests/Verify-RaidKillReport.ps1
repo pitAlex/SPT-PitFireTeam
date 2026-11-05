@@ -5,7 +5,7 @@ $property = [regex]::Match($follower, '(?m)^        internal bool ReportsRaidKil
 $patch = Get-Content -Raw (Join-Path $RepositoryRoot 'client/Patches/PlayerPatch.cs')
 $lookup = $patch.IndexOf('BotFollowerPlayer follower = BossPlayers.GetFollowers().Find(')
 $first = $patch.IndexOf('if (follower == null)', $lookup)
-$last = $patch.IndexOf('TryCreditFollowerKillQuestProgress(', $first)
+$last = $patch.IndexOf('EPlayerSide killedPlayerSide =', $first)
 if (!$property -or $lookup -lt 0 -or $first -lt 0 -or $last -le $first) { throw 'Missing production kill-report boundary' }
 $gate = $patch.Substring($first, $last - $first)
 if (!(Get-Content -Raw (Join-Path $RepositoryRoot 'client/Modules/BossPlayers.cs')).Contains('if (_follower.ReportsRaidKills)')) {
@@ -36,7 +36,7 @@ namespace pitTeam {
     public class Log {public int Warnings;public void LogWarning(string message){Warnings++;}}
 }
 namespace pitTeam.Components {
-    public class BotFollowerPlayer {public bool IsSquadMate;
+    public class BotFollowerPlayer {public bool IsSquadMate;public bool IsRosterMember;
 __PROPERTY__
     }
     public class BossFollowerPlayer:BotFollowerPlayer {}
@@ -44,8 +44,10 @@ __PROPERTY__
 namespace pitTeam.Modules {public static class Logger {public static void LogInfo(string value){}public static void LogError(object value){throw new Exception(value.ToString());}}}
 public class Fixture {
     static int checks,ProgressCredits;
+    static void TryCreditFollowerKillQuestProgress(Player victim,Player killer,BotFollowerPlayer follower,object damage,object part) {}
     static void Check(bool value,string reason){if(!value)throw new Exception(reason);checks++;}
     static void Capture(BotFollowerPlayer follower,Player followerPlayer,Player __instance){
+        object damageInfo=null,bodyPart=null;
 __GATE__
         ProgressCredits++;
     }

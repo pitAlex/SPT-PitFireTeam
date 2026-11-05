@@ -6,11 +6,9 @@ using UnityEngine;
 
 namespace pitTeam.GoingRogue.Combat
 {
-    internal sealed class BigPipeCombatLogic : FollowerCombatLogicBase
+    internal abstract class GoonMemberCombatLogic : FollowerCombatLogicBase
     {
-        internal BigPipeCombatLogic(BotOwner owner) : base(owner) { }
-        protected override FollowerCombatObjectiveBase CreateDefaultObjective(BotOwner owner, FollowerCombatCommon common)
-            => new BigPipeCombatObjective(owner, common);
+        protected GoonMemberCombatLogic(BotOwner owner) : base(owner) { }
         protected override FollowerCombatObjectiveBase GetObjective() => defaultObjective;
         private float nextKnightDirectiveProbe;
         public override AICoreActionEnd ShallEndCurrentDecision(AICoreActionResult<BotLogicDecision, CoreActionResultParams> current)
@@ -24,13 +22,20 @@ namespace pitTeam.GoingRogue.Combat
                 BotOwner.WeaponManager.Reload?.Reloading != true &&
                 BotOwner.WeaponManager.Grenades?.ThrowindNow != true && BotOwner.WeaponManager.Grenades?.ReadyToThrow != true &&
                 !(BotOwner.Memory.GoalEnemy?.IsVisible == true && BotOwner.Memory.GoalEnemy.CanShoot) &&
-                KnightSquadCoordinator.TryGetPushOverride(BotOwner, out var enemy, out var point))
+                ExUsecCombatExtension.TryGetPushOverride(BotOwner, out var enemy, out var point))
             {
                 nextKnightDirectiveProbe = Time.time + 1f;
                 if (combatCommon.TryPlanAssignedFiringPositionDecision(enemy, point, "bigPipe.knightReassign", out var destination,
                         out var next, preferBackline: false, enforceMarksmanPositionPolicy: false) &&
-                    combatCommon.TryPrepareAdmittedTargetTransition(current, "knightReassignPush", enemy, next))
+                    (BotOwner.Profile.Info.Settings.Role != WildSpawnType.exUsec ||
+                        RoguePositionCoordinator.TryReserve(BotOwner, enemy, destination)))
                 {
+                    if (!combatCommon.TryPrepareAdmittedTargetTransition(current, "knightReassignPush", enemy, next))
+                    {
+                        if (BotOwner.Profile.Info.Settings.Role == WildSpawnType.exUsec)
+                            RoguePositionCoordinator.ReleaseReservation(BotOwner);
+                        return base.ShallEndCurrentDecision(current);
+                    }
                     var follower = BossPlayers.Instance.GetFollower(BotOwner);
                     follower.ClearCommand("KnightReassignPush");
                     follower.ClearTemporaryCombatAggressionOverride("KnightReassignPush");
@@ -50,5 +55,12 @@ namespace pitTeam.GoingRogue.Combat
             => follower != null && follower.TryPeekActiveCommand(out var command, out _, out _) && command == FollowerCommandType.PushEnemy;
         protected override bool ShouldConsumeSuppressCommand(BotFollowerPlayer follower, EnemyInfo enemy)
             => follower != null && follower.TryGetActiveCommand(out var command, out _) && command == FollowerCommandType.SuppressEnemy;
+    }
+
+    internal sealed class BigPipeCombatLogic : GoonMemberCombatLogic
+    {
+        internal BigPipeCombatLogic(BotOwner owner) : base(owner) { }
+        protected override FollowerCombatObjectiveBase CreateDefaultObjective(BotOwner owner, FollowerCombatCommon common)
+            => new BigPipeCombatObjective(owner, common);
     }
 }

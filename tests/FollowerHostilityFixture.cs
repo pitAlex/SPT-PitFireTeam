@@ -1,4 +1,5 @@
 using System;
+using pitTeam.Shared;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -56,6 +57,7 @@ namespace EFT {
     }
     public class AIData { public BotOwner BotOwner; }
     public class Player : IPlayer {
+        public MovementContext MovementContext = new MovementContext();
         public string ProfileId { get; set; } public bool IsAI { get; set; } public IPlayer iPlayer => this;
         public string GroupId => Profile.Info.GroupId ?? "group-" + ProfileId;
         public Profile Profile { get; set; } = new Profile(); public AIData AIData { get; set; } = new AIData();
@@ -80,6 +82,7 @@ namespace EFT {
         }
     }
     public class BotOwner : Player {
+        public WeaponManager WeaponManager = new WeaponManager();
         public EBotState BotState=EBotState.Active;
         public BotOwner() { IsAI = true; AIData.BotOwner = this; }
         public Player PlayerObject; public Player GetPlayer => PlayerObject ?? this; public bool IsDead; public BotsGroup BotsGroup;
@@ -88,6 +91,9 @@ namespace EFT {
         public EnemiesController EnemiesController = new EnemiesController();
     }
     public class BotFollower { public pitAIBossPlayer BossToFollow; }
+    public class MovementContext { public bool IsStationaryWeaponInHands; }
+    public class WeaponManager { public Stationary Stationary = new Stationary(); }
+    public class Stationary { public bool Taken, HaveLink, WantToTake; }
     public class Memory { public EnemyInfo GoalEnemy; public bool HaveEnemy => GoalEnemy != null; public void DeleteInfoAboutEnemy(IPlayer player) { if (GoalEnemy?.ProfileId == player.ProfileId) GoalEnemy = null; } }
     public class GameWorld { public Player MainPlayer; public List<Player> AllAlivePlayersList = new List<Player>(); }
     public class SpawnData { public SpawnParams SpawnParams = new SpawnParams(); }
@@ -152,7 +158,8 @@ namespace pitTeam.Components {
         public void Dismiss(bool warn) { if(warn) throw new Exception("Scav departure must remain peaceful"); RestoreProfileIdentity();Bot.BotFollower.BossToFollow=null; }
     }
 }
-namespace pitTeam.Patches { public class BotsGroupPlayer : BotsGroup { public pitAIBossPlayer Boss; } }
+namespace pitTeam.Patches { public class BotsGroupPlayer : BotsGroup { public pitAIBossPlayer Boss; }
+    internal static class PlayerKilledPatch {internal static void TryRememberFriendlyPmcBeforePlayerDamage(EFT.Ballistics.DamageInfo damage, Player target) { }} }
 namespace pitTeam.Utils {
     public static class Utils {
         public static bool Friendly, Bad;
@@ -198,7 +205,13 @@ namespace pitTeam.Modules {
     public static class Logger { public static int Errors; public static void LogError(object s) { Errors++; } public static void LogInfo(string s) { } }
     public static class BattleRecorder { public static void RecordFriendlyEncounter(BotOwner bot,string stage,Func<object> details) { } }
     public static class GameplayModeRuntime { public static bool IsAllegiance;public static bool GetEffectiveValue(pitTeam.pitFireTeam.BoolSetting entry)=>entry.Value; }
-    public static class GameplayModeAddons { public static bool IsRogueRaid; }
+    public static class GameplayModeAddons {
+        public static bool IsRogueRaid, OnlyRogues; public static bool HasSelectedBossCompanions=>IsRogueRaid&&!OnlyRogues;
+        public static bool? RogueFriend; public static float? RogueChance; public static bool RogueAllowed=true;
+        public static bool? RecruitmentFriendship(string role)=>role=="exUsec" ? RogueFriend : null;
+        public static float? RecruitmentChance(string role)=>role=="exUsec" ? RogueChance : null;
+        public static bool RecruitmentAllowed(string role)=>role!="exUsec" || RogueAllowed;
+    }
     public static class BossPlayers {
         public static HashSet<string> Denied=new();
         public static bool HasDeniedRecruitment(string id)=>Denied.Contains(id);
@@ -245,6 +258,8 @@ public static class HostilityChecks {
     private static void Setup() {
         FriendlyEncounterPopulation.Allowed=true;FriendlyEncounterPopulation.UseReal=false;FriendlyEncounterPopulation.Queries=0;
         GameplayModeAddons.IsRogueRaid=false;
+        GameplayModeAddons.OnlyRogues=false;
+        GameplayModeAddons.RogueFriend=null;GameplayModeAddons.RogueChance=null;GameplayModeAddons.RogueAllowed=true;
         BossPlayers.Denied.Clear();pitTeam.pitFireTeam.tieredPickup.Value=true;
         AllegianceScavRelations.Reset(); BossPlayers.Registered.Clear(); pitTeam.Utils.Utils.Timers.Clear();
         AllegiancePmcFriendship.Reset(); GameplayModeRuntime.IsAllegiance=false; UnityEngine.Random.Rolls=0; UnityEngine.Random.NextValue=0f;
@@ -1293,7 +1308,65 @@ public static class HostilityChecks {
         var grouped=Scav("rogue-grouped");grouped.BotsGroup.TargetMembersCount=2;int rolls=UnityEngine.Random.Rolls;AllegiancePmcFriendship.Apply(grouped);
         Check(UnityEngine.Random.Rolls==rolls && !AllegiancePmcFriendship.CanRecruit(grouped,boss.realPlayer),"Goons preserve grouped-Scav exclusion");
     }
+    private static void RogueRecruitmentChecks() {
+        Setup();GameplayModeRuntime.IsAllegiance=true;
+        GameplayModeAddons.RogueFriend=true;GameplayModeAddons.RogueChance=0.7f;
+        outside.Members.Add(new BotOwner{ProfileId="rogue-guard",BotsGroup=outside});
+        outside.TargetMembersCount=4;FriendlyEncounterPopulation.Allowed=false;
+        AllegiancePmcFriendship.Apply(rogue);
+        Check(AllegiancePmcFriendship.IsSelectedFriendly(rogue,boss.realPlayer),"Grouped Rogues have alliance friendship without solo-population admission");
+        Check(FriendlyEncounterPopulation.Queries==0 && UnityEngine.Random.Rolls==0,"Rogue friendship neither spends ambient slots nor rolls PMC/Scav chances");
+        GameplayModeAddons.RogueAllowed=false;
+        Check(!AllegiancePmcFriendship.CanRecruit(rogue,boss.realPlayer),"Low standing blocks Rogue recruitment without revoking friendship");
+        GameplayModeAddons.RogueAllowed=true;UnityEngine.Random.NextValue=0.69f;
+        Check(AllegiancePmcFriendship.TryResolveRecruitmentAcceptance(rogue,boss.realPlayer,false,out bool accepted)&&accepted,"Rogue acceptance uses the quest probability, not Scav Fence or levels");
+        UnityEngine.Random.NextValue=0.99f;
+        Check(AllegiancePmcFriendship.TryResolveRecruitmentAcceptance(rogue,boss.realPlayer,false,out accepted)&&accepted&&UnityEngine.Random.Rolls==1,"Rogue recruitment answer is sticky");
+        GameplayModeAddons.RogueChance=0.1f;
+        Check(AllegiancePmcFriendship.TryResolveRecruitmentAcceptance(rogue,boss.realPlayer,false,out accepted)&&accepted&&UnityEngine.Random.Rolls==1,"later penalties cannot reroll an already sampled Rogue answer");
+        rogue.WeaponManager.Stationary.Taken=true;
+        Check(AllegiancePmcFriendship.HasRecruitmentGuardDuty(rogue)&&!AllegiancePmcFriendship.CanRecruit(rogue,boss.realPlayer),"Mounted Rogue remains friendly but cannot be recruited");
+        rogue.WeaponManager.Stationary.Taken=false;rogue.WeaponManager.Stationary.HaveLink=true;rogue.WeaponManager.Stationary.WantToTake=true;
+        Check(AllegiancePmcFriendship.HasRecruitmentGuardDuty(rogue),"Rogue approaching its assigned weapon retains guard duty");
+        GameplayModeAddons.RogueFriend=false;
+        Check(!AllegiancePmcFriendship.IsSelectedFriendly(rogue,boss.realPlayer),"Betrayal/conflicting task revokes existing Rogue friendship");
+        Setup();GameplayModeRuntime.IsAllegiance=true;GameplayModeAddons.RogueFriend=true;GameplayModeAddons.RogueChance=0.7f;
+        AllegiancePmcFriendship.Apply(rogue);GameplayModeAddons.RogueChance=0.595f;UnityEngine.Random.NextValue=0.65f;
+        Check(!AllegiancePmcFriendship.TryResolveRecruitmentAcceptance(rogue,boss.realPlayer,true,out accepted)&&UnityEngine.Random.Rolls==0,"unrolled Rogue uses reduced current chance before proactive invitation threshold");
+        Check(AllegiancePmcFriendship.TryResolveRecruitmentAcceptance(rogue,boss.realPlayer,false,out accepted)&&!accepted&&UnityEngine.Random.Rolls==1,"first requested Rogue acceptance observes a penalty added after spawn");
+        GameplayModeAddons.RogueChance=1f;
+        Check(AllegiancePmcFriendship.TryResolveRecruitmentAcceptance(rogue,boss.realPlayer,false,out accepted)&&accepted&&UnityEngine.Random.Rolls==1,
+            "new Goon guarantee overrides a prior Rogue refusal without another random roll");
+        Setup();GameplayModeRuntime.IsAllegiance=true;GameplayModeAddons.IsRogueRaid=true;GameplayModeAddons.OnlyRogues=true;
+        var pmc=Solo("pmc-beside-rogue");UnityEngine.Random.NextValue=0f;AllegiancePmcFriendship.Apply(pmc);
+        Check(AllegiancePmcFriendship.IsSelectedFriendly(pmc,boss.realPlayer),"Rogue-only teams retain PMC encounters below the reduced roll threshold");
+    }
+    private static void RoguePresencePenaltyChecks() {
+        var chance=typeof(AllegiancePmcFriendship).GetMethod("GetSelectionChance",BindingFlags.NonPublic|BindingFlags.Static);
+        foreach(int members in new[]{1,2,3,8})
+        foreach(int penalties in new[]{0,15,30,90,100}) {
+            Setup();GameplayModeRuntime.IsAllegiance=true;GameplayModeAddons.IsRogueRaid=true;GameplayModeAddons.OnlyRogues=true;
+            FriendlyEncounterPenaltyRuntime.Points=penalties;
+            boss.Followers.Clear();
+            for(int i=0;i<members;i++) {var member=Scav("rogue-member-"+i);member.Profile.Info.Settings.Role=WildSpawnType.exUsec;boss.Followers.Add(member);}
+            foreach(var row in new[]{(EPlayerSide.Usec,0.30f),(EPlayerSide.Bear,0.15f),(EPlayerSide.Savage,0.03f)}) {
+                float actual=(float)chance.Invoke(null,new object[]{row.Item1,EPlayerSide.Usec});
+                float expected=FriendlyEncounterPenaltyPolicy.Apply(row.Item2,penalties+(row.Item1==EPlayerSide.Savage?0:15));
+                Check(Math.Abs(actual-expected)<0.00001f,"Rogue presence applies once to PMCs only alongside ordinary penalties: "+members+"/"+penalties+"/"+row.Item1);
+            }
+        }
+        Setup();GameplayModeRuntime.IsAllegiance=true;GameplayModeAddons.IsRogueRaid=true;GameplayModeAddons.OnlyRogues=true;
+        UnityEngine.Random.NextValue=0.26f;var rejected=Solo("rogue-penalty-rejected");AllegiancePmcFriendship.Apply(rejected);
+        Check(!AllegiancePmcFriendship.IsSelectedFriendly(rejected,boss.realPlayer),"PMC roll above 25.5 percent fails with Rogue accompaniment");
+        GameplayModeAddons.IsRogueRaid=false;AllegiancePmcFriendship.Apply(rejected);
+        Check(UnityEngine.Random.Rolls==1&&!AllegiancePmcFriendship.IsSelectedFriendly(rejected,boss.realPlayer),"Removing Rogue presence cannot reroll an existing bot");
+        Setup();GameplayModeRuntime.IsAllegiance=true;GameplayModeAddons.IsRogueRaid=true;
+        var mixed=Solo("mixed-goon-rogue");AllegiancePmcFriendship.Apply(mixed);
+        Check(!AllegiancePmcFriendship.IsSelectedFriendly(mixed,boss.realPlayer)&&UnityEngine.Random.Rolls==0,"Goon presence overrides Rogue penalty with zero PMC encounters");
+    }
     public static void Main() {
+        RogueRecruitmentChecks();
+        RoguePresencePenaltyChecks();
         Setup();GameplayModeRuntime.IsAllegiance=true;GameplayModeAddons.IsRogueRaid=true;
         Check(AllegiancePmcFriendship.IsEnabled,"Rogue companions retain the Scav encounter service");
         var rolePolicy=typeof(BotGroupAddEnemyPatch).GetMethod("IsRogueFriendlyType",BindingFlags.NonPublic|BindingFlags.Static);

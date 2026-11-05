@@ -554,7 +554,7 @@ namespace pitTeam.Patches
 
             // Legacy boss companions retain their policy; Going Rogue uses encounter diplomacy.
             bool badGuy = GameplayModeRuntime.GetEffectiveValue(pitFireTeam.badGuy);
-            if (SpawnHelper.spawnMemberIdsBoss.Count > 0 && !GameplayModeRuntime.IsGoingRogue)
+            if (SpawnHelper.spawnMemberIdsBoss.Count > 0 && !GameplayModeRuntime.IsGoingRogueActive)
             {
                 badGuy = true;
                 Utils.Utils.FlagSet("isBadGuy", true);
@@ -572,7 +572,7 @@ namespace pitTeam.Patches
 
             if (questCompanions.Count > 0)
             {
-                Modules.Logger.LogInfo($"[QuestCompanion] selected mode=GoingRogue location={settings.LocationId} roles={string.Join(",", questCompanions)} selectedMembers=0");
+                Modules.Logger.LogInfo($"[QuestCompanion] selected mode=Allegiance location={settings.LocationId} roles={string.Join(",", questCompanions)} selectedMembers=0");
                 questCompanions.ForEach(companion =>
                 {
                     if (companion == "bossKnight")
@@ -685,11 +685,18 @@ namespace pitTeam.Patches
             return AccessTools.Method(typeof(EFT.UI.Matchmaker.BaseMatchmakerController<RaidSettings>), nameof(EFT.UI.Matchmaker.BaseMatchmakerController<RaidSettings>.AddPlayerToGroup));
         }
 
+        [PatchPrefix]
+        private static void PatchPrefix(EFT.UI.Matchmaker.RaidPlayer player)
+        {
+            if (QuestCompanionPreview.IsPreview(player?.AccountId)) return;
+            // Native collection insertion can render the panel immediately.
+            NormalizeTeammateIconCategory(player);
+        }
+
         [PatchPostfix]
         private static void PatchPostfix(EFT.UI.Matchmaker.MatchmakerPlayersController __instance, EFT.UI.Matchmaker.RaidPlayer player)
         {
             if (QuestCompanionPreview.IsPreview(player?.AccountId)) return;
-            NormalizeTeammateIconCategory(player);
             EnsureTeammateVisualHealth(__instance, player);
             TeammateAutoJoinRuntime.ClearSuppression(player?.AccountId);
             if (__instance.CurrentPlayer != player &&
@@ -713,7 +720,8 @@ namespace pitTeam.Patches
                 return;
             }
 
-            EMemberCategory category = player.Info?.SelectedMemberCategory ??
+            // GroupCharacter carries MemberCategory; an absent selected field deserializes as Default.
+            EMemberCategory category = player.Info?.MemberCategory ??
                 player.PlayerVisualRepresentation?.Info?.MemberCategory ?? EMemberCategory.Unheard;
             if (player.Info != null)
             {
@@ -911,7 +919,7 @@ namespace pitTeam.Patches
                 QuestCompanionPreview.Remove();
                 CompanionRaidPreparation.InvalidateQuest();
             }
-            if (_screen != null && GameplayModeAddons.Current == GameplayMode.GoingRogue) Refresh(controller);
+            if (_screen != null && GameplayModeAddons.Current == GameplayMode.Allegiance) Refresh(controller);
         }
         internal static void GroupRemoved(EFT.UI.Matchmaker.MatchmakerPlayersController controller)
         {
@@ -923,9 +931,9 @@ namespace pitTeam.Patches
             try
             {
                 SyntheticTeammateRaidGuard.KeepLocal(_profile, _settings, _offlineSettings);
-                string questRole = QuestCompanionPreview.RolesFor(_profile, _settings).FirstOrDefault();
-                CompanionRaidPreparation.Prepare(_settings, MainMenuControllerPatch.GroupPlayers.Where(player => player != null).Select(player => player.AccountId), questRole);
-                QuestCompanionPreview.Refresh(controller, questRole);
+                var questRoles = QuestCompanionPreview.RolesFor(_profile, _settings);
+                CompanionRaidPreparation.Prepare(_settings, MainMenuControllerPatch.GroupPlayers.Where(player => player != null).Select(player => player.AccountId), questRoles: questRoles);
+                QuestCompanionPreview.RefreshAll(controller, questRoles);
                 SyntheticTeammateAutoJoinLoader.RefreshLoadedTeammateVisuals(controller, preserveVisualBindings: true);
             }
             catch (Exception ex) { Modules.Logger.LogError("[CompanionRaidKit] Accept-screen group refresh failed: " + ex); }
@@ -957,7 +965,7 @@ namespace pitTeam.Patches
             if (!raidSettings.IsPmc) MainMenuControllerPatch.GroupPlayers.Clear();
             SyntheticTeammateAutoJoinLoader.RefreshLoadedTeammateVisuals(matchmaker);
             if (!raidSettings.isInTransition && !Utils.Utils.FlagGet("RaidTransit"))
-                QuestCompanionPreview.Refresh(matchmaker, QuestCompanionPreview.RolesFor(session.Profile, raidSettings).FirstOrDefault());
+                QuestCompanionPreview.RefreshAll(matchmaker, QuestCompanionPreview.RolesFor(session.Profile, raidSettings));
 
             if (matchmaker?.GroupPlayers?.List == null)
             {

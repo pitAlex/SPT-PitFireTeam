@@ -21,7 +21,7 @@ internal static class GoingRogueModeTests
     internal static void Run(FriendlyTeammateStorage storage, FriendlyServerSettingsService settings,
         JsonUtil json, Action<bool, string> check)
     {
-        check(!FriendlyGameplayModeAddons.IsAvailable("GoingRogue"), "Going Rogue is unavailable without the server addon");
+        check(!FriendlyGameplayModeAddons.HasExtension("Allegiance"), "Going Rogue is unavailable without the server addon");
         string database = Path.Combine(Path.GetDirectoryName(typeof(GlobalTable).Assembly.Location)!, "SPT_Data", "database");
         var globals = json.Deserialize<GlobalTable>(File.ReadAllText(Path.Combine(database, "globals.json")))!;
         var bots = new BotTable { Base = new(), Core = null!, Types = new() };
@@ -31,6 +31,8 @@ internal static class GoingRogueModeTests
         var templates = (TemplateTable)RuntimeHelpers.GetUninitializedObject(typeof(TemplateTable));
         typeof(TemplateTable).GetProperty(nameof(TemplateTable.Items))!.SetValue(templates,
             json.Deserialize<Dictionary<MongoId, TemplateItem>>(File.ReadAllText(Path.Combine(database, "templates", "items.json")))!);
+        typeof(TemplateTable).GetProperty(nameof(TemplateTable.Quests))!.SetValue(templates,
+            json.Deserialize<Dictionary<MongoId, Quest>>(File.ReadAllText(Path.Combine(database, "templates", "quests.json")))!);
         var baseClasses = (ItemBaseClassService)typeof(ItemBaseClassService).GetConstructors().Single().Invoke(
             typeof(ItemBaseClassService).GetConstructors().Single().GetParameters().Select(parameter =>
                 parameter.Name == "templateTable" ? (object)templates : null).ToArray());
@@ -52,9 +54,9 @@ internal static class GoingRogueModeTests
         new GoingRogueServerPlugin(globals, bots, itemHelper, inventoryHelper,
             json.Deserialize<SPTarkov.Server.Core.Models.Spt.Config.BotConfig>(File.ReadAllText(Path.Combine(Path.GetDirectoryName(database)!, "configs", "bot.json")))!,
             (SPTarkov.Server.Core.Generators.Bot.BotInventoryGenerator)RuntimeHelpers.GetUninitializedObject(typeof(SPTarkov.Server.Core.Generators.Bot.BotInventoryGenerator)),
-            (SPTarkov.Server.Core.Helpers.Bot.BotHelper)RuntimeHelpers.GetUninitializedObject(typeof(SPTarkov.Server.Core.Helpers.Bot.BotHelper))).OnLoadAsync(CancellationToken.None).GetAwaiter().GetResult();
+            (SPTarkov.Server.Core.Helpers.Bot.BotHelper)RuntimeHelpers.GetUninitializedObject(typeof(SPTarkov.Server.Core.Helpers.Bot.BotHelper)), templates).OnLoadAsync(CancellationToken.None).GetAwaiter().GetResult();
         var bosses = new Dictionary<string, BotBase>();
-        foreach (var companion in FriendlyGameplayModeAddons.Companions("GoingRogue").Where(companion => companion.ProficiencyOnly))
+        foreach (var companion in FriendlyGameplayModeAddons.Companions("Allegiance").Where(companion => companion.ProficiencyOnly))
         {
             var boss = new BotBase { Info = new() { Level = 14, Experience = 1400, Settings = new() { Role = companion.Role } },
                 Skills = new() { Common = [new() { Id = SkillTypes.Assault, Progress = 17.25 }, new() { Id = SkillTypes.RecoilControl, Progress = 31.5 }], Mastering = [], Points = 2 } };
@@ -74,11 +76,11 @@ internal static class GoingRogueModeTests
         check(bosses.Values.All(boss => boss.Skills!.Common.Single(skill => skill.Id == SkillTypes.Assault).Progress == 17.25),
             "all Goons retain actual generated assault progress instead of invented role floors");
         var noSkills = new BotBase { Info = new() { Settings = new() { Role = "bossKnight" } } };
-        FriendlyGameplayModeAddons.Policy("GoingRogue", noSkills)!.PrepareProfile!(noSkills);
+        FriendlyGameplayModeAddons.Policy("Allegiance", noSkills)!.PrepareProfile!(noSkills);
         check(noSkills.Skills == null, "level/profile preparation never fabricates missing skills");
         check(json.Serialize(bots.Types["bossknight"]) == nativeKnight, "boss preparation never mutates the shared native template");
         var session = new MongoId("c0c0c0c0c0c0c0c0c0c0c0c0");
-        foreach (string mode in new[] { "GunsForHire", "Allegiance", "GoingRogue" })
+        foreach (string mode in new[] { "GunsForHire", "Allegiance" })
         {
             settings.SaveAndApply(new() { GameplayMode = mode });
             storage.InitializeProfile(session);
@@ -86,7 +88,7 @@ internal static class GoingRogueModeTests
                 Info = new() { Nickname = mode, Side = "Usec", Settings = new() { Role = "bossKnight" } },
                 Inventory = new() { Items = [] }, Customization = new() });
         }
-        foreach (string mode in new[] { "GunsForHire", "Allegiance", "GoingRogue" })
+        foreach (string mode in new[] { "GunsForHire", "Allegiance" })
         {
             settings.SaveAndApply(new() { GameplayMode = mode });
             check(storage.ReadProfiles(session).Single().Info?.Nickname == mode, "same account ID remains isolated in " + mode);
@@ -99,18 +101,31 @@ internal static class GoingRogueModeTests
         var insurance = (FriendlyTeammateInsuranceService)typeof(FriendlyTeammateInsuranceService).GetConstructors().Single().Invoke(
             typeof(FriendlyTeammateInsuranceService).GetConstructors().Single().GetParameters().Select(parameter =>
                 parameter.Name == "settingsService" ? (object)settings : null).ToArray());
+        var nativeProfiles = new System.Collections.Concurrent.ConcurrentDictionary<MongoId, SptProfile>();
+        foreach (string id in new[]{"c0c0c0c0c0c0c0c0c0c0c0c0","c1c1c1c1c1c1c1c1c1c1c1c1","c2c2c2c2c2c2c2c2c2c2c2c2","c3c3c3c3c3c3c3c3c3c3c3c3"})
+            nativeProfiles[new(id)] = new() { CharacterData = new() { PmcData = new() { Info = new() { Level=20, Side="Usec" },
+                Quests=[], TradersInfo = new() { [new("67768b19fa281ca31708b187")]=new(){Standing=1} } } } };
+        var nativeSave=(SPTarkov.Server.Core.Servers.SaveServer)RuntimeHelpers.GetUninitializedObject(typeof(SPTarkov.Server.Core.Servers.SaveServer));
+        typeof(SPTarkov.Server.Core.Servers.SaveServer).GetField("profiles",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(nativeSave,nativeProfiles);
+        var profileHelper=(SPTarkov.Server.Core.Helpers.Profile.ProfileHelper)typeof(SPTarkov.Server.Core.Helpers.Profile.ProfileHelper).GetConstructors().Single().Invoke(
+            typeof(SPTarkov.Server.Core.Helpers.Profile.ProfileHelper).GetConstructors().Single().GetParameters().Select(p=>p.Name=="saveServer"?(object)nativeSave:null).ToArray());
         var ammoTemplate = new MongoId("54527a984bdc2d4e668b4567"); // Native 5.56 M855.
+        var language = new FriendlyLanguageService(DispatchProxy.Create<ISptLogger<FriendlyLanguageService>, TestLogger>());
+        language.GetLanguageJson(session, "en", File.ReadAllText(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,
+            "../../../../../server/Resources/lang/en.json"))));
         var service = (FriendlyTeammateService)typeof(FriendlyTeammateService).GetConstructors().Single().Invoke(
             typeof(FriendlyTeammateService).GetConstructors().Single().GetParameters().Select(parameter => parameter.Name switch
             {
                 "storage" => (object)storage, "settingsService" => settings, "jsonUtil" => json,
+                "profileHelper" => profileHelper,
+                "languageService" => language,
                 "teammateInsuranceService" => insurance,
                 "itemHelper" => itemHelper,
                 "cloner" => new FastCloner(),
                 "logger" => DispatchProxy.Create<ISptLogger<FriendlyTeammateService>, TestLogger>(), _ => null
             }).ToArray());
         var knight = storage.ReadProfiles(session).Single();
-        var policy = FriendlyGameplayModeAddons.Policy("GoingRogue", knight)!;
+        var policy = FriendlyGameplayModeAddons.Policy("Allegiance", knight)!;
         storage.Write(session, "123-settings.json", new FriendlyTeammateSettings
         {
             SelectedLoadoutId = "000000000000000000000000", Aggression = 73,
@@ -118,14 +133,13 @@ internal static class GoingRogueModeTests
         });
         check(policy.ProficiencyOnly && policy.RaidReady && policy.PortraitColor == "#667D91", "Knight has the addon profile and raid-readiness policy");
         check(policy.GenerateEquipmentEachRaid, "Knight uses native equipment generation for each raid");
-        check(FriendlyGameplayModeAddons.Companions("GoingRogue").All(companion => !companion.SeedForTesting), "test Goons are no longer added automatically to any roster");
-        check(policy.CanSpawnForQuest != null && FriendlyGameplayModeAddons.Companions("GoingRogue").Where(companion => companion.Role != "bossKnight")
-            .All(companion => companion.CanSpawnForQuest == null), "only Knight is authorized for the first two quest deployments");
+        check(FriendlyGameplayModeAddons.Companions("Allegiance").All(companion => !companion.SeedForTesting), "test Goons are no longer added automatically to any roster");
+        check(FriendlyGameplayModeAddons.Companions("Allegiance").Where(companion => companion.ProficiencyOnly).All(companion => companion.CanSpawnForQuest != null), "all Goons register quest deployment admission");
         check(!service.TryGetQuestCompanionProfile(session, "bossKnight", null, 1, null, out _) &&
             !service.TryGetQuestCompanionProfile(session, "bossKnight", "123", 0, null, out _), "selected-member requests cannot use temporary quest generation");
-        check(FriendlyGameplayModeAddons.Companions("GoingRogue").Where(companion => companion.ProficiencyOnly)
+        check(FriendlyGameplayModeAddons.Companions("Allegiance").Where(companion => companion.ProficiencyOnly)
             .All(companion => companion.PrepareRaidEquipment != null), "all three Goons register raid-only spare provisioning");
-        check(FriendlyGameplayModeAddons.Companions("GoingRogue").Single(companion => companion.Role == "exUsec")
+        check(FriendlyGameplayModeAddons.Companions("Allegiance").Single(companion => companion.Role == "exUsec")
             .PrepareRaidEquipment == null, "exUsec has no Goon spare-magazine policy");
         check(policy.ProtectSpawnInventory, "Knight protects native inventory independently of loadout mode");
         var equipmentReady = typeof(FriendlyTeammateService).GetMethod("HasRaidEquipmentOrGenerator", BindingFlags.Instance | BindingFlags.NonPublic)!;
@@ -155,6 +169,38 @@ internal static class GoingRogueModeTests
         var firstSpawn = (BotBase)merge.Invoke(service, [knight, nativeOne, null])!;
         var secondSpawn = (BotBase)merge.Invoke(service, [knight, nativeTwo, null])!;
         CompanionRaidPreparationTests.Run(service, session, knight, firstSpawn, secondSpawn, json, check);
+        var nativePlayer=nativeProfiles[session].CharacterData!.PmcData!;
+        nativePlayer.Quests=[new(){QId=new("6179ad0a6e9dd54ac275e3f2"),Status=QuestStatusEnum.Started,StartTime=0,StatusTimers=[]}];
+        check(!service.TryGetSpawnProfile(session,"123",null,out _),"hostile task acquired after invitation blocks actual saved Knight spawn");
+        var inviteText = language.GetStringMap(session, "socialUi");
+        try
+        {
+            foreach (string role in new[] { "bossKnight", "followerBigPipe", "followerBirdEye", "exUsec" })
+            {
+                var invited = json.Deserialize<BotBase>(json.Serialize(knight)!)!;
+                invited.Info!.Settings!.Role = role;
+                storage.Write(session, "123.json", invited);
+                check(!service.TryGetRaidGroupCharacter(session, "123", out var declined, out var reason, out var sender)
+                    && declined != null && reason == inviteText["RogueAllianceHostileTaskReply"]
+                    && sender != null && sender.Id == knight.Id && sender.Aid == 123 && sender.Info?.Nickname == declined.Info?.Nickname,
+                    "hostile-task decline comes from invited companion with localized hint: " + role);
+                nativePlayer.Quests = [];
+                nativePlayer.TradersInfo![new("67768b19fa281ca31708b187")].Standing = 0.25;
+                if (role != "bossKnight")
+                    check(!service.TryGetRaidGroupCharacter(session, "123", out _, out reason, out sender)
+                        && reason == inviteText["RogueAllianceStandingLowReply"] && sender?.Id == knight.Id,
+                        "low-standing decline comes from invited companion: " + role);
+                nativePlayer.Quests = [new() { QId = new("6179ad0a6e9dd54ac275e3f2"), Status = QuestStatusEnum.Started, StartTime = 0, StatusTimers = [] }];
+                nativePlayer.TradersInfo![new("67768b19fa281ca31708b187")].Standing = 1;
+            }
+            var ordinaryInvite = json.Deserialize<BotBase>(json.Serialize(knight)!)!;
+            ordinaryInvite.Info!.Settings!.Role = "pmcUSEC";
+            storage.Write(session, "123.json", ordinaryInvite);
+            service.TryGetRaidGroupCharacter(session, "123", out _, out _, out var ordinarySender);
+            check(ordinarySender == null, "ordinary PMC rejection retains its existing system sender");
+        }
+        finally { storage.Write(session, "123.json", knight); }
+        nativePlayer.Quests=[];
         check(firstSpawn.Inventory!.Items!.Count(item => item.Template.ToString() == "55d4887d4bdc2d962f8b4570") == 2,
             "Core invokes addon equipment provisioning before preview persistence");
         check(firstSpawn.Id == knight.Id && firstSpawn.Aid == knight.Aid && firstSpawn.Info!.Settings!.Role == "bossKnight",
@@ -219,20 +265,20 @@ internal static class GoingRogueModeTests
         catch (TargetInvocationException ex) when (ex.InnerException is InvalidOperationException) { rejectedPreview = true; }
         check(rejectedPreview && json.Serialize(storage.ReadProfiles(session).Single().Inventory) == savedPreview,
             "different companion role cannot overwrite Knight's preview");
-        settings.SaveAndApply(new() { GameplayMode = "Allegiance" });
+        settings.SaveAndApply(new() { GameplayMode = "GunsForHire" });
         string ordinaryModeBefore = json.Serialize(storage.ReadProfiles(session).Single())!;
         rejectedPreview = false;
         try { savePreview.Invoke(service, [session, secondSpawn]); }
         catch (TargetInvocationException ex) when (ex.InnerException is InvalidOperationException) { rejectedPreview = true; }
         check(rejectedPreview && json.Serialize(storage.ReadProfiles(session).Single()) == ordinaryModeBefore,
             "spawn preview cannot write a same-account roster in another mode");
-        settings.SaveAndApply(new() { GameplayMode = "GoingRogue" });
+        settings.SaveAndApply(new() { GameplayMode = "Allegiance" });
         firstSpawn.Inventory.Items!.Clear();
         check(nativeOne.Inventory.Items!.Count == 6 && secondSpawn.Inventory!.Items!.Count > 3 && json.Serialize(knight) == beforeSpawn,
             "raid equipment is isolated from the generated template, next raid and persistent profile");
         foreach (string mode in new[] { "Restricted", "Immersive", "Extreme" })
         {
-            settings.SaveAndApply(new() { GameplayMode = "GoingRogue", LoadoutManagementMode = mode });
+            settings.SaveAndApply(new() { GameplayMode = "Allegiance", LoadoutManagementMode = mode });
             foreach (string? containerTemplate in new[] { null, "5857a8bc2459772bad15db29", "5c0a794586f77461c458f892" })
             {
                 var native = NativeKit();
@@ -271,9 +317,9 @@ internal static class GoingRogueModeTests
         var preview = (BotBase)preparePreview.Invoke(service, [knight, null, false])!;
         check(json.Serialize(preview.Inventory) == json.Serialize(knight.Inventory),
             "Knight's off-raid preview does not receive raid-only reserves");
-        foreach (var companion in FriendlyGameplayModeAddons.Companions("GoingRogue"))
-            check(FriendlyGameplayModeAddons.Policy("Allegiance", new BotBase { Info = new() { Settings = new() { Role = companion.Role } } }) == null,
-                "companion presentation cannot leak into Allegiance: " + companion.Role);
+        foreach (var companion in FriendlyGameplayModeAddons.Companions("Allegiance"))
+            check(FriendlyGameplayModeAddons.Policy("GunsForHire", new BotBase { Info = new() { Settings = new() { Role = companion.Role } } }) == null,
+                "companion presentation cannot leak into Guns for Hire: " + companion.Role);
         Reject(() => service.RenameTeammate(session, new() { Aid = "123", Nickname = "Changed" }), check);
         Reject(() => service.SetTeammateSuit(session, new() { Aid = "123", Suit = ["a", "b"] }), check);
         Reject(() => service.SetTeammateVoice(session, new() { Aid = "123", Voice = "a" }), check);
@@ -356,21 +402,128 @@ internal static class GoingRogueModeTests
             check(Convert.ToInt32(info.GetType().GetProperty("MemberCategory")!.GetValue(info)) == (int)MemberCategory.Sherpa,
                 "special boss category survives projection: " + projection);
         }
+        // AcceptScreen rebuilds previews from the serialized profile response after
+        // equipment preparation, bypassing AddPlayerToGroup. Test the actual wire fields.
+        var iconCases = new List<object>();
+        string iconDirectory = Path.Combine(AppContext.BaseDirectory, "icon-contract");
+        Directory.CreateDirectory(iconDirectory);
+        foreach (string role in new[] { "bossKnight", "followerBigPipe", "followerBirdEye", "pmcUSEC" })
+        {
+            var iconProfile = new FastCloner().Clone(migrated)!;
+            iconProfile.Info!.Settings!.Role = role;
+            iconProfile.Info.MemberCategory = iconProfile.Info.SelectedMemberCategory = MemberCategory.Sherpa;
+            int expected = (int)(role == "pmcUSEC" ? MemberCategory.Unheard : MemberCategory.Sherpa);
+            var other = (GetOtherProfileResponse)typeof(FriendlyTeammateService)
+                .GetMethod("ToOtherProfileResponse", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(service, [iconProfile])!;
+            var group = (SPTarkov.Server.Core.Models.Eft.Match.GroupCharacter)typeof(FriendlyTeammateService)
+                .GetMethod("ToGroupCharacter", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(service, [iconProfile])!;
+            foreach (var (boundary, info, kind) in new (string, object, string)[] {
+                ("profile", other.Info!, "other"), ("group", group.Info!, "player"),
+                ("visual", group.VisualRepresentation!.Info!, "player") })
+            {
+                string serialized = json.Serialize(info)!;
+                using var document = System.Text.Json.JsonDocument.Parse(serialized);
+                var fields = document.RootElement.EnumerateObject().ToDictionary(property => property.Name, property => property.Value,
+                    StringComparer.OrdinalIgnoreCase);
+                check(fields["MemberCategory"].GetInt32() == expected, role + "/" + boundary + " serializes authoritative member category");
+                check(fields.TryGetValue("SelectedMemberCategory", out var selected) && selected.GetInt32() == expected,
+                    role + "/" + boundary + " serializes selected category for native preview refresh");
+                string path = Path.Combine(iconDirectory, role + "-" + boundary + ".json");
+                File.WriteAllText(path, serialized);
+                iconCases.Add(new { Path = path, Kind = kind, Expected = expected });
+            }
+        }
+        File.WriteAllText(Path.Combine(iconDirectory, "manifest.json"), System.Text.Json.JsonSerializer.Serialize(iconCases));
         check(policy.GetVisibleSkills!().Contains("Assault") && !policy.GetVisibleSkills().Contains("Sniper"),
             "Knight's visible skills focus on his assault role");
-        check(FriendlyGameplayModeAddons.Companions("GoingRogue").Single(item => item.Role == "followerBigPipe") is
+        check(FriendlyGameplayModeAddons.Companions("Allegiance").Single(item => item.Role == "followerBigPipe") is
             { RaidReady: true, SeedForTesting: false, ProtectSpawnInventory: true, HideRaidStats: true }, "Big Pipe retains protected combat support without test seeding");
-        check(FriendlyGameplayModeAddons.Companions("GoingRogue").Single(item => item.Role == "followerBirdEye") is
+        check(FriendlyGameplayModeAddons.Companions("Allegiance").Single(item => item.Role == "followerBirdEye") is
             { RaidReady: true, SeedForTesting: false, HideRaidStats: true, ProtectSpawnInventory: true, ProficiencyOnly: true, GenerateEquipmentEachRaid: true },
             "Birdeye's implemented brain enables protected native-kit raid spawning with boss presentation");
+        check(FriendlyGameplayModeAddons.Companions("Allegiance").Single(item => item.Role == "followerBirdEye").CanJoinRoster != null, "Partizan hunt registers permanent Birdeye roster reconciliation");
         check(service.ListFollowerDetails(session).Single().Role == "bossKnight", "saved native role reaches raid-selection metadata");
         service.SetTeammateProficiency(session, new() { Aid = "123", Proficiency = new() });
+        var savedBossRole = knight.Info!.Settings!.Role;
+        var savedBossSettings = storage.Read<FriendlyTeammateSettings>(session, "123-settings.json")!;
+        foreach (string role in new[] { "bossKnight", "followerBigPipe", "followerBirdEye" })
+        {
+            knight.Info.Settings.Role = role;storage.Write(session, "123.json", knight);
+            storage.Write(session, "123-settings.json", new FriendlyTeammateSettings
+                { Aggression = 73, SelfDetermination = 42, CombatTactic = "Marksman" });
+            var bossOptions = service.GetProfileOptions(session, new() { Aid = "123" });
+            check(bossOptions.ProficiencyOnly && bossOptions.LockCombatSettings,
+                "all Goons publish proficiency-only combat controls: " + role);
+            using (var summary = System.Text.Json.JsonDocument.Parse(json.Serialize(service.ListTeammates(session).Single())!))
+                check(summary.RootElement.GetProperty("PinnedRoster").GetBoolean(), "Goon summary pins the fixed non-removable roster card: " + role);
+            foreach (string route in new[] { "account", "profile" })
+            {
+                bool rejected = false;
+                string before = json.Serialize(storage.Read<BotBase>(session, "123.json"))!;
+                try
+                {
+                    if (route == "account") service.DeleteTeammateWithPayment(session, new() { AccountId = "123" });
+                    else service.DeleteTeammateByProfileId(session, new MongoId(knight.Id.ToString()!));
+                }
+                catch (FriendlyTeammateException ex) { rejected = ex.Message == "CompanionRemovalLocked"; }
+                check(rejected && json.Serialize(storage.Read<BotBase>(session, "123.json")) == before,
+                    "all Goon removal routes reject before editing the roster: " + role + "/" + route);
+                check(!storage.Exists(session, "pending-deletion.json"), "Goon removal creates no payment/removal journal");
+            }
+            foreach (string change in new[] { "aggression", "tactic" })
+            {
+                bool rejected = false;
+                try
+                {
+                    if (change == "aggression") service.SetTeammateAggression(session, new() { Aid = "123", Aggression = 99 });
+                    else service.SetTeammateTactic(session, new() { Aid = "123", Tactic = "Rifleman" });
+                }
+                catch (FriendlyTeammateException) { rejected = true; }
+                check(rejected, "server rejects forged Goon combat edits: " + role + "/" + change);
+            }
+            service.SetTeammateProficiency(session, new() { Aid = "123", Proficiency = new() { Accuracy = 130 }, SelfDetermination = 99 });
+            var bossSettings = storage.Read<FriendlyTeammateSettings>(session, "123-settings.json")!;
+            check(bossSettings.Aggression == 73 && bossSettings.SelfDetermination == 42 && bossSettings.Proficiency.Accuracy == 130,
+                "Goon proficiency edits cannot alter hidden aggression/determination: " + role);
+            check(service.GetProfileOptions(session, new() { Aid = "123" }).CurrentTactic == "Marksman",
+                "hiding boss controls does not apply the Rogue Rifleman tactic override: " + role);
+        }
+        knight.Info.Settings.Role = savedBossRole;storage.Write(session, "123.json", knight);
+        storage.Write(session, "123-settings.json", savedBossSettings);
         check(storage.Exists(session, "123-settings.json"), "Knight proficiency remains editable");
         check(storage.ReadProfiles(session).Count == 1 && !storage.Exists(session, "addon-companion-bossknight.json"),
             "an existing Knight is retained without a duplicate or new seed receipt");
         storage.DeleteTeammate(session, 123);
         check(service.ListTeammates(session).Count == 0 && !storage.Exists(session, "addon-companion-bossknight.json"),
             "removing Knight cannot trigger a new seed grant");
+        var rogue = new FastCloner().Clone(knight)!;
+        rogue.Id = new MongoId(); rogue.Aid = 129; rogue.Info!.Settings!.Role = "exUsec";
+        storage.Write(session, "129.json", rogue);
+        using (var summary = System.Text.Json.JsonDocument.Parse(json.Serialize(service.ListTeammates(session).Single())!))
+            check(!summary.RootElement.GetProperty("PinnedRoster").GetBoolean(), "ordinary Rogue remains in the removable scrolling roster");
+        storage.Write(session, "129-settings.json", new FriendlyTeammateSettings
+        { Aggression = 68, SelfDetermination = 42, CombatTactic = "SainMan" });
+        check(FriendlyGameplayModeAddons.Policy("Allegiance", rogue) is { LockCombatSettings: true, ProficiencyOnly: false },
+            "Rogue locks combat controls without locking ordinary identity/equipment customization");
+        check(service.ListFollowerDetails(session).Single().Tactic == "Rifleman",
+            "existing Rogue tactic resolves to the fixed Rifleman brain without rerolling numeric preferences");
+        foreach (string change in new[] { "aggression", "tactic" })
+        {
+            bool rejected = false;
+            try
+            {
+                if (change == "aggression") service.SetTeammateAggression(session, new() { Aid = "129", Aggression = 99 });
+                else service.SetTeammateTactic(session, new() { Aid = "129", Tactic = "Marksman" });
+            }
+            catch (FriendlyTeammateException) { rejected = true; }
+            check(rejected, "server rejects forged Rogue combat edits: " + change);
+        }
+        service.SetTeammateProficiency(session, new() { Aid = "129", Proficiency = new() { Accuracy = 130 }, SelfDetermination = 99 });
+        var locked = storage.Read<FriendlyTeammateSettings>(session, "129-settings.json")!;
+        check(locked.Aggression == 68 && locked.SelfDetermination == 42 && locked.Proficiency.Accuracy == 130,
+            "proficiency remains editable while a forged determination field cannot change saved combat percentages");
+        check(locked.AddonRequired == "xyz.pit.fireteam.goingrogue", "recruited Rogue settings retain the same addon owner as Goons");
+        storage.DeleteTeammate(session, 129);
         var bigPipeSession = new MongoId("c1c1c1c1c1c1c1c1c1c1c1c1");
         storage.InitializeProfile(bigPipeSession);
         storage.Write(bigPipeSession, "addon-companion-bossknight.json", new { initialized = true });
@@ -378,6 +531,9 @@ internal static class GoingRogueModeTests
         var bigPipe = new FastCloner().Clone(bosses["followerBigPipe"])!;
         bigPipe.Id = new MongoId(); bigPipe.Aid = 125; bigPipe.Inventory = new() { Items = [] };
         storage.Write(bigPipeSession, "125.json", bigPipe);
+        nativeProfiles[bigPipeSession].CharacterData!.PmcData!.TradersInfo![new("67768b19fa281ca31708b187")].Standing=0.49;
+        check(!service.TryGetSpawnProfile(bigPipeSession,"125",null,out _),"standing lost after invitation blocks actual Big Pipe spawn");
+        nativeProfiles[bigPipeSession].CharacterData!.PmcData!.TradersInfo![new("67768b19fa281ca31708b187")].Standing=1;
         check(service.ListFollowerDetails(bigPipeSession).Single().Role == "followerBigPipe" &&
             !storage.Exists(bigPipeSession, "addon-companion-followerbigpipe.json"), "existing Big Pipe reaches raid-selection metadata without a seed grant");
         storage.DeleteTeammate(bigPipeSession, 125);
@@ -399,7 +555,7 @@ internal static class GoingRogueModeTests
         var penaltyService = new FriendlyEncounterPenaltyService(storage, settings);
         long killedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         int allyAid = 2000;
-        foreach (var companion in FriendlyGameplayModeAddons.Companions("GoingRogue").Where(item => item.ProficiencyOnly))
+        foreach (var companion in FriendlyGameplayModeAddons.Companions("Allegiance").Where(item => item.ProficiencyOnly))
         {
             check(companion.IgnoreEncounterKillPenalty, "Goons register encounter-penalty exemption: " + companion.Role);
             var ally = new FastCloner().Clone(bosses[companion.Role])!;
@@ -414,6 +570,38 @@ internal static class GoingRogueModeTests
         check(penaltyService.Record(penaltySession, new() { RaidId = "recruit-test", VictimProfileId = "ordinary-recruit",
             MessageKind = "traitor", KilledAtUnixMs = killedAt }, killedAt).Entries.Count == 1,
             "boss exemption preserves penalties for ordinary recruits");
+        var registrations = (System.Collections.IDictionary)typeof(FriendlyGameplayModeAddons).GetField("Modes", BindingFlags.NonPublic | BindingFlags.Static)!.GetValue(null)!;
+        var installed = registrations["Allegiance"]!;
+        // Backfill a legacy member while its owner is loaded, then remove the
+        // registration without touching its profile, kit, skills or grant receipt.
+        check(storage.IsTeammateAddonAvailable(session, 123, "bossKnight", "Allegiance"), "installed addon admits a legacy Knight");
+        check(storage.Read<FriendlyTeammateSettings>(session, "123-settings.json")?.AddonRequired == "xyz.pit.fireteam.goingrogue", "legacy companion persists a generic addon requirement");
+        var memberDocuments = storage.ReadModeProfiles(session, "Allegiance");
+        var loadRoster = typeof(FriendlyTeammateService).GetMethod("LoadTeammates", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var otherAddonMember = new FastCloner().Clone(knight)!;
+        otherAddonMember.Aid = 987;
+        otherAddonMember.Id = new MongoId();
+        otherAddonMember.Info!.Settings!.Role = "pmcUSEC";
+        storage.Write(session, "987.json", otherAddonMember);
+        storage.Write(session, "987-settings.json", new FriendlyTeammateSettings { AddonRequired = "some.other.addon" });
+        check(!((List<BotBase>)loadRoster.Invoke(service, [session])!).Any(member => member.Aid == 987), "generic addon requirement also hides a non-Goon from an unavailable unrelated addon");
+        storage.DeleteTeammate(session, 987);
+        registrations.Remove("Allegiance");
+        try
+        {
+            check(!storage.IsTeammateAddonAvailable(session, 123, "bossKnight", "Allegiance"), "absent addon hides its stored Knight");
+            check(!((List<BotBase>)loadRoster.Invoke(service, [session])!).Any(member => member.Aid == 123), "Core roster and social reads omit missing-addon members");
+            check(storage.ReadModeProfiles(session, "Allegiance").SequenceEqual(memberDocuments), "hidden teammate profile remains unchanged in storage");
+            check(storage.GetAllAccountIds().Contains(123), "hidden members keep their account IDs reserved");
+            check(FriendlyGameplayModeAddons.IsAddonAvailable(null) && FriendlyGameplayModeAddons.IsAddonAvailable(""), "ordinary legacy teammates require no addon");
+            check(!FriendlyGameplayModeAddons.IsAddonAvailable("some.other.addon"), "requirement lookup is generic and unknown addons remain unavailable");
+            var ready = typeof(FriendlyTeammateService).GetMethod("IsCompanionRaidReady", BindingFlags.NonPublic | BindingFlags.Instance)!;
+            foreach(string role in new[] { "bossKnight", "followerBigPipe", "followerBirdEye" })
+                check(!(bool)ready.Invoke(service, [new BotBase { Info = new() { Settings = new() { Role = role } } }])!, "missing addon cannot spawn a stored Goon through ordinary Allegiance: " + role);
+            check((bool)ready.Invoke(service, [new BotBase { Info = new() { Settings = new() { Role = "pmcUSEC" } } }])!, "ordinary Allegiance teammates remain available without addon");
+        }
+        finally { registrations["Allegiance"] = installed; }
+        check(storage.IsTeammateAddonAvailable(session, 123, "bossKnight", "Allegiance"), "reinstalling restores visibility without granting or recreating the teammate");
         settings.SaveAndApply(new());
     }
     private static void Reject(Action action, Action<bool, string> check)

@@ -36,6 +36,8 @@ public partial class FriendlyTeammateService
     {
         lock (CreationLock)
         {
+            if (CompanionPolicy(teammate)?.PinnedRoster == true)
+                throw new FriendlyTeammateException("CompanionRemovalLocked");
             RecoverTeammateCreation(sessionId);
             RecoverTeammateDeletion(sessionId);
             int aid = teammate.Aid ?? throw new FriendlyTeammateException("TeammateDeleteFailed");

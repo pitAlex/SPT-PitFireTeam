@@ -18,6 +18,7 @@ namespace UnityEngine {
         public static Vector3 operator *(Vector3 a,float b)=>new Vector3(a.x*b,a.y*b,a.z*b);
     }
 }
+namespace pitTeam.BigBrain {public static class FollowerEnemyInfoCorrection{public static bool IsInsideLookCheck=>false;}}
 namespace EFT {
     public class Player { public string ProfileId="enemy"; public Vector3 Position; }
     public class BotOwner {
@@ -45,6 +46,7 @@ namespace EFT {
 namespace pitTeam {
     public class ConfigValue<T> {public T Value;public ConfigValue(T v){Value=v;}}
     public static class pitFireTeam {
+        public static bool IsSAINInstalled;
         public static ConfigValue<EnemyTrackingMode> enemyTracking=new ConfigValue<EnemyTrackingMode>(EnemyTrackingMode.Realistic);
         public static ConfigValue<int> enemyRemember=new ConfigValue<int>(20);
         public static bool UseSainFollowerCombat(BotOwner owner)=>owner.Addon;
@@ -64,6 +66,7 @@ namespace pitTeam.Modules {
         public Follower GetFollower(BotOwner o)=>new Follower();
     }
     public static class SainGoalEnemyBridge {
+        public static bool TrySyncTrackingReport(EnemyInfo enemy,Vector3 point,float observedAt,bool sight)=>false;
         public static bool Native;public static Vector3 NativePoint;public static float NativeTime;
         public static bool TryGetTrackingReport(BotOwner owner,EnemyInfo enemy,out Vector3 point,out float time){point=NativePoint;time=NativeTime;return Native;}
         public static bool TryGetRetainedSameGoalEnemy(BotOwner owner,EnemyInfo enemy,out Vector3 point){point=NativePoint;return Native;}

@@ -50,7 +50,43 @@ public class StandartBotBrain
     public BotOwner _owner; public WildSpawnType ActivatedRole;
     [MethodImpl(MethodImplOptions.NoInlining)] public void Activate()=>ActivatedRole=_owner.Profile.Info.Settings.Role;
 }
-public class BotsGroup { public enum BotCurrentTactic { Protect } }
+public class BotsGroup { public enum BotCurrentTactic { Protect } public BotGame BotGame=new BotGame(); }
+public class BotGame { public BotsController BotsController=new BotsController(); }
+public class BotsController { public AIStationaryController StationaryWeapons=new AIStationaryController(); }
+public class AIStationaryController { public StationaryWeaponLink[] Weapons=new StationaryWeaponLink[0]; }
+public class CorePoint { public int ConnectionGroupId=7; }
+public class CustomNavigationPoint { public CorePoint CorePointInGame=new CorePoint(); }
+public class NavGraphVoxelSimple { public CustomNavigationPoint PointStartSearch=new CustomNavigationPoint(); }
+public class BotCurrentCoverInfo { public CustomNavigationPoint LastCover; }
+public class BotMemory { public BotCurrentCoverInfo BotCurrentCoverInfo=new BotCurrentCoverInfo(); }
+public class BotVoxelesPersonalData
+{
+    public BotOwner _owner;public NavGraphVoxelSimple CurVoxel;
+    public BotVoxelesPersonalData(BotOwner owner){_owner=owner;}
+    /*NATIVE_CONNECTION_ID*/
+}
+public class StationaryWeapon { public UnityEngine.Vector3 OperatorPosition; }
+public class StationaryWeaponLink
+{
+    public StationaryWeapon Weapon=new StationaryWeapon();public CorePoint CorePointInGame=new CorePoint();
+    public bool HaveAmmo()=>true;public bool IsFree(int id)=>true;
+}
+public class BotStationaryWeaponData
+{
+    public BotOwner _owner;public AIStationaryController _curStationaryWeapons;public int Targets;
+    public BotStationaryWeaponData(BotOwner owner){_owner=owner;}
+    public void SetTargetStationary(StationaryWeaponLink link)=>Targets++;
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    /*NATIVE_STATIONARY_LOOKUP*/
+}
+namespace UnityEngine
+{
+    public struct Vector3
+    {
+        public float x,y,z;public float sqrMagnitude=>x*x+y*y+z*z;
+        public static Vector3 operator -(Vector3 a,Vector3 b)=>new Vector3{x=a.x-b.x,y=a.y-b.y,z=a.z-b.z};
+    }
+}
 namespace EFT
 {
     public enum WildSpawnType { assault, bossKnight, followerBigPipe, followerBirdEye, pmcUSEC, pmcBEAR, exUsec }
@@ -70,7 +106,9 @@ namespace EFT
         public IGetProfileData SpawnProfileData; public PatrollingData PatrollingData=new PatrollingData();
         public Tactic Tactic=new Tactic(); public Actions PeacefulActions=new Actions(),DeadBodyWork=new Actions();
         public Boss Boss=new Boss(); public bool Managed;
-        public BotOwner(){BotFollower=new BotFollower(this);}
+        public int Id=1;public UnityEngine.Vector3 Position;public BotsGroup BotsGroup=new BotsGroup();
+        public BotMemory Memory=new BotMemory();public BotVoxelesPersonalData VoxelesPersonalData;
+        public BotOwner(){BotFollower=new BotFollower(this);VoxelesPersonalData=new BotVoxelesPersonalData(this);}
         public bool IsPMC()=>Profile.Side!=EPlayerSide.Savage;
         public bool IsSimulatedPlayerScav()=>false;
         public bool HasMainProfileNickname()=>false;
@@ -147,7 +185,12 @@ internal static class Program
         }
         var before=Bot(WildSpawnType.followerBigPipe);var originalBrain=new StandartBotBrain{_owner=before};originalBrain.Activate();
         Check(SPT.Custom.Patches.Weights.Lookups==1 && SPT.Custom.Patches.Logger.Errors>0,"unpatched SPT reproduces PMC-side Goon weight failure");
+        var unpatchedRogue=Bot(WildSpawnType.exUsec);bool stationaryFailed=false;
+        try{new BotStationaryWeaponData(unpatchedRogue).TryFindClosests(default(UnityEngine.Vector3),true,out _);}
+        catch(NullReferenceException){stationaryFailed=true;}
+        Check(stationaryFailed,"native strategy stationary probe reproduces activation failure without a current voxel");
         new FollowerHumanPatrolChooserPatch().Enable();new FollowerNativeBrainActivationPatch().Enable();
+        new FollowerRogueStationaryInitializationPatch().Enable();
         foreach(var role in new[]{WildSpawnType.bossKnight,WildSpawnType.followerBigPipe,WildSpawnType.followerBirdEye,WildSpawnType.pmcUSEC})
         {
             var bot=Bot(role);var leader=new pitAIBossPlayer();bot.BotFollower.SetToFollow(leader,2);
@@ -171,7 +214,7 @@ internal static class Program
         Check(PatrollingData.GetPointChooser(null,PatrolMode.groupMoving) is PatrolPointChooserGroup,"absent bot does not invent human ownership");
         var missingPlayer=Bot(WildSpawnType.followerBigPipe);missingPlayer.BotFollower.BossToFollow=new pitAIBossPlayer{realPlayer=null};
         Check(PatrollingData.GetPointChooser(missingPlayer,PatrolMode.groupMoving) is PatrolPointChooserGroup,"missing human player cannot activate compatibility override");
-        foreach(var role in new[]{WildSpawnType.bossKnight,WildSpawnType.followerBigPipe,WildSpawnType.followerBirdEye})
+        foreach(var role in new[]{WildSpawnType.bossKnight,WildSpawnType.followerBigPipe,WildSpawnType.followerBirdEye,WildSpawnType.exUsec})
         foreach(var side in new[]{EPlayerSide.Usec,EPlayerSide.Bear,EPlayerSide.Savage})
         {
             var bot=Bot(role,true,side);var brain=new StandartBotBrain{_owner=bot};int lookups=SPT.Custom.Patches.Weights.Lookups;
@@ -186,6 +229,39 @@ internal static class Program
         }
         var hostile=Bot(WildSpawnType.followerBigPipe,false);int previous=SPT.Custom.Patches.Weights.Lookups;new StandartBotBrain{_owner=hostile}.Activate();
         Check(SPT.Custom.Patches.Weights.Lookups==previous+1,"unmarked actors retain SPT behavior even with a PMC side");
+        foreach(string missing in new[]{"memory","coverInfo","voxelData","coveredWithoutVoxelData","voxel","voxelPoint","voxelCore","coverCore"})
+        {
+            var rogue=Bot(WildSpawnType.exUsec);rogue.VoxelesPersonalData.CurVoxel=new NavGraphVoxelSimple();
+            switch(missing)
+            {
+                case "memory":rogue.Memory=null;break;
+                case "coverInfo":rogue.Memory.BotCurrentCoverInfo=null;break;
+                case "voxelData":rogue.VoxelesPersonalData=null;break;
+                case "coveredWithoutVoxelData":rogue.VoxelesPersonalData=null;rogue.Memory.BotCurrentCoverInfo.LastCover=new CustomNavigationPoint();break;
+                case "voxel":rogue.VoxelesPersonalData.CurVoxel=null;break;
+                case "voxelPoint":rogue.VoxelesPersonalData.CurVoxel.PointStartSearch=null;break;
+                case "voxelCore":rogue.VoxelesPersonalData.CurVoxel.PointStartSearch.CorePointInGame=null;break;
+                case "coverCore":rogue.Memory.BotCurrentCoverInfo.LastCover=new CustomNavigationPoint{CorePointInGame=null};break;
+            }
+            var data=new BotStationaryWeaponData(rogue);
+            Check(!data.TryFindClosests(default(UnityEngine.Vector3),true,out var target)&&target==null&&data.Targets==0,
+                "unsafe pre-registration Rogue stationary lookup declines without publishing a target: "+missing);
+            rogue.Memory=new BotMemory();rogue.VoxelesPersonalData=new BotVoxelesPersonalData(rogue){CurVoxel=new NavGraphVoxelSimple()};
+            var weapon=new StationaryWeaponLink();rogue.BotsGroup.BotGame.BotsController.StationaryWeapons.Weapons=new[]{weapon};
+            Check(data.TryFindClosests(default(UnityEngine.Vector3),true,out target)&&target==weapon&&data.Targets==1,
+                "native lookup becomes available normally once connection data arrives: "+missing);
+        }
+        foreach(bool managed in new[]{false,true})
+        {
+            var bot=Bot(managed?WildSpawnType.pmcUSEC:WildSpawnType.exUsec,managed);bool failed=false;
+            try{new BotStationaryWeaponData(bot).TryFindClosests(default(UnityEngine.Vector3),true,out _);}catch(NullReferenceException){failed=true;}
+            Check(failed,"stationary guard excludes ambient Rogues and ordinary teammate roles");
+        }
+        var covered=Bot(WildSpawnType.exUsec);covered.Memory.BotCurrentCoverInfo.LastCover=new CustomNavigationPoint();
+        var available=new StationaryWeaponLink();covered.BotsGroup.BotGame.BotsController.StationaryWeapons.Weapons=new[]{available};
+        var stationary=new BotStationaryWeaponData(covered);
+        Check(stationary.TryFindClosests(default(UnityEngine.Vector3),false,out var found)&&found==available&&stationary.Targets==0,
+            "valid last cover supplies native connection without a current voxel and preserves withSetTarget=false");
         Console.WriteLine("PASS: "+checks+" native human-follow / managed-Goon brain activation checks, including actual Harmony prefix/postfix execution. Controlled patrol inputs; not a Unity raid test.");
     }
 }

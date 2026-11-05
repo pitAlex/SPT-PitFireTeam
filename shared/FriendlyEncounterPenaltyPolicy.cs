@@ -8,6 +8,7 @@ namespace pitTeam.Shared
     {
         public string Id { get; set; } = string.Empty;
         public long ExpiresAtUnixMs { get; set; }
+        public bool AffectsRecruitment { get; set; }
     }
 
     public sealed class FriendlyEncounterPenaltyState
@@ -33,6 +34,15 @@ namespace pitTeam.Shared
 
         public static float Apply(float chance, int reductionPercent) =>
             Math.Max(0f, Math.Min(1f, chance)) * (1f - Math.Max(0, Math.Min(100, reductionPercent)) / 100f);
+
+        public static int GetRecruitmentReductionPercent(IEnumerable<FriendlyEncounterPenaltyEntry> entries, long nowUnixMs)
+        {
+            int percent = 0;
+            foreach (var entry in entries)
+                if (entry.AffectsRecruitment && entry.ExpiresAtUnixMs > nowUnixMs)
+                    percent = Math.Min(100, percent + ReductionPercentPerKill);
+            return percent;
+        }
 
         public static string GetCountdown(long expiresAtUnixMs, long nowUnixMs, out bool hours, out long nextUpdateUnixMs)
         {

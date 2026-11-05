@@ -1,6 +1,7 @@
 using EFT;
 using pitTeam.BigBrain;
 using pitTeam.Components;
+using pitTeam.Modules;
 using pitTeam.GoingRogue.Combat;
 using UnityEngine;
 
@@ -14,6 +15,19 @@ void Check(bool value, string reason) { checks++; if (!value) throw new Exceptio
     var objective = new KnightCombatObjective(bot, common);
     objective.StartDecision();
     return (bot, common, objective);
+}
+
+foreach(bool explicitHelp in new[]{false,true})
+{
+    var (bot,c,o)=Setup();
+    var boss=new pitAIBossPlayer();boss.Logic.IsHitted=true;boss.Logic.HasManualHelpRequest=explicitHelp;boss.Attacker=new BotOwner();
+    bot.BotFollower.BossToFollow=boss;c.HasTeamSplitHelpRequest=explicitHelp;c.Immediate=true;
+    BossPlayers.Instance.Followers[bot]=new BotFollowerPlayer{Owner=bot,Boss=boss,SplitHelpEnemy=explicitHelp?boss.Attacker:null};
+    FollowerCombatAnchor.Independent=true;
+    var decision=o.GetDecision(bot.Memory.GoalEnemy);
+    Check((decision.Reason=="knight.needHelpFire")==explicitHelp,"split independence permits only explicit accepted player help");
+    Check(c.Calls.Contains("admitLeaderThreat")==explicitHelp,"shared boss-hit state alone cannot divert split unit");
+    FollowerCombatAnchor.Independent=false;BossPlayers.Instance.Followers.Remove(bot);
 }
 
 foreach (var branch in new[] { "reload", "dogfight", "grenade", "medical", "healRetry", "position", "movement", "committedCover" })
@@ -143,11 +157,13 @@ foreach(var path in new[]{"cover","immediate","searchHold","teamSearch","pushCov
     if(path=="cover") Check(c.Calls.Contains("extendCover"),"current-cover assistance extends commitment");
 }
 {
-    var (bot,c,o)=Setup(); var human=new pitAIBossPlayer { Attacker=new BotOwner() }; human.Logic.IsHitted=true;
+    var (bot,c,o)=Setup(); var human=new pitAIBossPlayer { Attacker=new BotOwner() }; human.Logic.IsHitted=true;human.Logic.HasManualHelpRequest=true;
     bot.BotFollower.BossToFollow=human; c.Immediate=true;
+    BossPlayers.Instance.Followers[bot]=new BotFollowerPlayer{Owner=bot,Boss=human};
     Check(o.GetDecision(bot.Memory.GoalEnemy).Reason=="knight.needHelpFire","Need Help uses admitted leader attacker");
     Check(c.Calls.Contains("admitLeaderThreat"),"help requires shared target admission");
     var (bot2,c2,o2)=Setup(); bot2.BotFollower.BossToFollow=human; c2.Admission=false;
+    BossPlayers.Instance.Followers[bot2]=new BotFollowerPlayer{Owner=bot2,Boss=human};
     Check(o2.GetDecision(bot2.Memory.GoalEnemy).Reason=="vanilla","rejected help contact cannot seize combat");
 }
 {
@@ -303,4 +319,9 @@ PushLeadershipHandoffChecks.Run(Check);
 BirdEyeChecks.Run(Check);
 GoonRejoinChecks.Run(Check);
 IndependentPursuitChecks.Run(Check);
+BirdEyeSupportChecks.Run(Check);
+ExUsecChecks.Run(Check);
+RoguePositionChecks.Run(Check);
+RogueAdvanceStopChecks.Run(Check);
+AggressorChecks.Run(Check);
 Console.WriteLine($"PASS: {checks} production Knight/Big Pipe objective/support/caution/lease/command checks. Stubbed EFT inputs; no Unity raid simulation.");

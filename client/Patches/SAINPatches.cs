@@ -101,6 +101,7 @@ namespace pitTeam.Patches
             FollowerSainProficiency.ApplyPatches(harmony);
             FollowerSainTrackingTimerPatch.Apply(harmony);
             FollowerSainHearingPatch.Apply(harmony);
+            FollowerSainTrackingReportPatch.Apply(harmony);
             FollowerSainSquadLeaderPatch.Apply(harmony);
         }
 

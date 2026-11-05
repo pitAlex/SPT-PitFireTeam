@@ -125,7 +125,8 @@ public class FriendlyTeammateCallbacks(
 
     public ValueTask<string> GetGameplayMode(string url, EmptyRequestData request, MongoId sessionId)
         => new(httpResponse.GetBody(new { gameplayMode = settingsService.LoadSettings().GameplayMode,
-            availableModes = pitTeam.Shared.GameplayModePolicy.Modes.Where(FriendlyGameplayModeAddons.IsAvailable).ToArray() }));
+            goingRogueAvailable = FriendlyGameplayModeAddons.HasExtension("Allegiance"),
+            availableModes = pitTeam.Shared.GameplayModePolicy.Modes }));
 
     public ValueTask<string> SetServerSettings(string url, FriendlyServerSettingsRequest request, MongoId sessionId)
     {

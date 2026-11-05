@@ -8,6 +8,14 @@ namespace pitTeam.BigBrain
     {
         public const float MaxContactAgeSeconds = 2f;
 
+        public static bool TryGetTargetForOwner(BotOwner owner, EnemyInfo? enemy, out Vector3 target)
+        {
+            target = Vector3.zero;
+            if (owner == null || enemy?.Person?.HealthController?.IsAlive != true) return false;
+            return TryGetTarget(enemy, out target) ||
+                   pitTeam.Utils.FollowerAwareness.TryGetIncomingFireSuppressTarget(owner, enemy, out target);
+        }
+
         public static bool TryGetTarget(EnemyInfo? enemy, out Vector3 target)
         {
             target = Vector3.zero;

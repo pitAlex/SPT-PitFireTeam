@@ -57,6 +57,8 @@ namespace pitTeam
         ViewBackpack = 10002,
         SwapGear = 10003,
         GiveGear = 10004,
+        TeamSplit = 10005,
+        TeamCombine = 10006,
     }
 
     public enum CustomGestures
@@ -206,7 +208,7 @@ namespace pitTeam
         public string Message { get; set; }
     }
 
-    [BepInPlugin("xyz.pit.fireteam", "PitAlex-PitFireTeam", "1.1.0")]
+    [BepInPlugin("xyz.pit.fireteam", "PitAlex-PitFireTeam", "1.1.1")]
     [BepInDependency("xyz.drakia.bigbrain")]
     [BepInDependency(pitFireTeam.SainPluginId, BepInDependency.DependencyFlags.SoftDependency)]
     [BepInDependency(pitFireTeam.MenuOverhaulPluginId, BepInDependency.DependencyFlags.SoftDependency)]
@@ -381,6 +383,7 @@ namespace pitTeam
             new FollowerFoundInRaidPatch().Enable();
             new FollowerHumanPatrolChooserPatch().Enable();
             new FollowerNativeBrainActivationPatch().Enable();
+            new FollowerRogueStationaryInitializationPatch().Enable();
             new SessionLoadBotsEnglishVoicePatch().Enable();
             new LootPatrolActiveLayerListPatch().Enable();
             new LootPatrolDecisionBypassPatch().Enable();
@@ -555,6 +558,7 @@ namespace pitTeam
             new QuickPanelUpdateBackpackInteractionPatch().Enable();
             new GestureMenuPatch().Enable();
             new CreatePhraseGroupPatch().Enable();
+            new TeamSplitMenuAvailabilityPatch().Enable();
             new CreateGesturesPatch().Enable();
             new CustomPlayerGestureIntPatch().Enable();
             new CustomPlayerGestureInteractionPatch().Enable();

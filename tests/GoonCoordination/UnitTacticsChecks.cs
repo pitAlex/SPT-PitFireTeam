@@ -8,7 +8,7 @@ internal static class UnitTacticsChecks
 {
     internal static void Run()
     {
-        foreach(string partner in new[]{"pipe","bird","ordinary","dead","inactive","foreign","unowned"})
+        foreach(string partner in new[]{"pipe","bird","rogue","ordinary","dead","inactive","foreign","unowned"})
         {
             GoonUnitTactics.Reset();BossPlayers.Followers.Clear();GoonCombatLayer.Owned.Clear();
             var leader=new pitAIBossPlayer();
@@ -19,12 +19,21 @@ internal static class UnitTacticsChecks
             }
             var knight=Add(WildSpawnType.bossKnight);GoonUnitTactics.RefreshAll();
             Check(knight.UnitDetermination==null&&knight.UnitAggression==null,"solo Knight keeps protective normal settings");
-            var other=Add(partner=="bird"?WildSpawnType.followerBirdEye:partner=="ordinary"?WildSpawnType.pmcUSEC:WildSpawnType.followerBigPipe);
+            var other=Add(partner=="rogue"?WildSpawnType.exUsec:partner=="bird"?WildSpawnType.followerBirdEye:partner=="ordinary"?WildSpawnType.pmcUSEC:WildSpawnType.followerBigPipe);
             if(partner=="dead")other.Bot.IsDead=true;
             if(partner=="inactive")other.Bot.BotState=EBotState.Inactive;
             if(partner=="foreign")other.Leader=new pitAIBossPlayer();
             if(partner=="unowned")GoonCombatLayer.Owned.Remove(other.Bot);
             other.Bot.Position=new(500,0,0);GoonUnitTactics.RefreshAll();
+            bool roguePartner=partner=="rogue";
+            if(roguePartner)
+            {
+                Check(knight.UnitDetermination==100f && knight.UnitAggression==70f,"Knight plus a living Rogue forms an offensive unit");
+                Check(other.UnitDetermination==null && other.UnitAggression==null,"Goon unit policy does not overwrite Rogue-owned percentages");
+                other.Bot.IsDead=true;GoonUnitTactics.RefreshAll();
+                Check(knight.UnitDetermination==null,"losing the only Rogue releases composition baseline");
+                continue;
+            }
             bool unit=partner is "pipe" or "bird";
             Check(knight.UnitDetermination==(unit?100f:null)&&knight.UnitAggression==(unit?70f:null),"only another living managed Goon activates Knight's unit stance: "+partner);
             Check(other.UnitDetermination==(unit?100f:null),"unit membership excludes foreign, ordinary and unready actors: "+partner);
@@ -59,10 +68,10 @@ internal static class UnitTacticsChecks
         trio[0].CommandOverride=trio[2].CommandOverride=true;GoonUnitTactics.Reset();
         Check(trio[0].UnitDetermination==null&&trio[2].UnitDetermination==null&&trio[0].CommandOverride&&trio[2].CommandOverride,
             "mode/raid teardown removes only the addon baseline, not player command state");
-        GoonUnitTactics.RefreshAll();GameplayModeAddons.Current=GameplayMode.Allegiance;GoonUnitTactics.RefreshAll();
+        GoonUnitTactics.RefreshAll();GameplayModeAddons.Current=GameplayMode.GoingRogue;GoonUnitTactics.RefreshAll();
         Check(trio[0].UnitDetermination==null&&trio[2].UnitDetermination==null&&trio[2].CommandOverride,
             "mode switching clears unit stance even before native layer teardown");
-        GameplayModeAddons.Current=GameplayMode.GoingRogue;
+        GameplayModeAddons.Current=GameplayMode.Allegiance;
         GoonUnitTactics.Reset();BossPlayers.Followers.Clear();GoonCombatLayer.Owned.Clear();
     }
 }
