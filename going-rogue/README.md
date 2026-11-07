@@ -1,4 +1,4 @@
-# Going Rogue 1.0.0
+# Going Rogue 1.0.1
 
 Core base: [gameplay modes](../docs/Gameplay-Modes.md), [storage](../docs/Teammate-Storage.md), [My Squad](../docs/My-Squad-Screen.md), and [architecture](../docs/Architecture.md).
 

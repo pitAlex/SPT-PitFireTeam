@@ -236,12 +236,12 @@ Orders guide behavior rather than overriding every action. Healing, reloads, imm
 ### Movement and following
 
 - **Follow Me** - resume normal following and leave patrol mode.
-- **Attention / Look** - clear current orders and reset follower behavior toward you. Also restores saved Aggression and Self-Determination.
+- **Attention / Look** - reset the entire squad's current orders and enemy awareness, including any detached Team Split unit. Also clears temporary Aggression and Self-Determination command overrides.
 - **Regroup** - call followers back toward you. In combat, they seek a nearby position when it is safe to move.
 - **Exit Located** - gather followers close around you for extraction.
 - **Stop** - stop without forcing a crouch. Followers may resume following if you move too far away.
 - **Go Forward** outside combat - send available followers toward the location you point at.
-- **On Your Own** outside combat - allow nearby followers to patrol the area after you stop moving. They catch up normally while you travel. **Follow Me**, **Regroup**, or **Cover Me** returns them to normal following.
+- **On Your Own** outside combat - look directly at a teammate to let him patrol the area after you stop moving; looking at nobody broadcasts the order. Followers catch up normally while you travel. **Follow Me**, **Regroup**, or **Cover Me** returns them to normal following.
 - **Cover Me** outside combat - leave patrol mode and return to close-follow behavior.
 
 ---
@@ -253,7 +253,7 @@ Orders guide behavior rather than overriding every action. Healing, reloads, imm
 - **Need Help** - request support against the enemy closest to you.
 - **Need Sniper** - ask a Marksman to find a useful firing position against the enemy closest to you. He can answer negative if busy or unable to find a suitable opportunity.
 - **Hold Position** - temporarily set Aggression to **0%** for a defensive approach. Followers can still shoot, heal, and move out of danger.
-- **On Your Own** - temporarily set Self-Determination to **100%**, allowing followers to fight without automatically regrouping solely because you moved away.
+- **On Your Own** - look directly at a teammate to give him combat independence; looking at nobody broadcasts the order. Temporarily sets Self-Determination to **100%**, allowing recipients to fight without automatically regrouping solely because you moved away.
 - **Cover Me** - temporarily set Self-Determination to **20%**, stop the current push, and regroup toward you.
 - **Go Go Go** - restore saved Aggression and Self-Determination.
 

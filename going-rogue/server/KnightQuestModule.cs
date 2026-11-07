@@ -128,7 +128,12 @@ public sealed class KnightQuestModule(CustomQuestService quests, TemplateTable t
     }
     private void SynchronizeWaits(BotBase? player)
     {
-        if (IsAllegiance && player != null && KnightQuestWaits.Synchronize(player, delayedQuests))
+        if (player == null) return;
+        // Saved Knight quests are still serialized outside Allegiance. Fix their
+        // wire type before native cloning, without admitting or advancing quests.
+        bool changed = KnightQuestWaits.NormalizeAvailableAfter(player);
+        if (IsAllegiance) changed |= KnightQuestWaits.Synchronize(player, delayedQuests);
+        if (changed)
             logger.Info($"[GoingRogueQuests] Synchronized prerequisite-based quest waits profile={player.Id}");
     }
     private void SynchronizeWaits(MongoId sessionId) => SynchronizeWaits(profiles.GetPmcProfile(sessionId));

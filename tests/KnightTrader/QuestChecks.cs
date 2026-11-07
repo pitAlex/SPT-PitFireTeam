@@ -33,7 +33,7 @@ internal static class QuestChecks
         MongoId session, Action<bool, string> check, Action<string> mode)
     {
         var definitions = KnightQuestModule.ReadQuests(json);
-        QuestWaitChecks.Run(definitions, check);
+        QuestWaitChecks.Run(definitions, json, check);
         HostileQuestChecks.Run(json, templates, check);
         RogueAllianceChecks.Run(json, settings, templates, check);
         var english = KnightQuestModule.ReadLocales(json)["en"];
@@ -319,6 +319,19 @@ internal static class QuestChecks
                 mode("Allegiance"); helper.GetClientQuests(session);
                 check(accepted.Status == QuestStatusEnum.AvailableAfter && accepted.AvailableAfter == success + 3600,
                     "native quest-list hook repairs already affected waits without auto-starting the quest");
+                accepted.Status = QuestStatusEnum.Started;
+                accepted.AvailableAfter = 1793975566.517;
+                accepted.CompletedConditions = ["kept-objective"];
+                accepted.StatusTimers = new() { [QuestStatusEnum.Started] = 1793971966.517 };
+                mode("GunsForHire");
+                var repaired = profiles.GetCompleteProfile(session);
+                check(accepted.AvailableAfter == 1793975567 && repaired[0].Quests!.Single(q => q.QId == fourth.Id).AvailableAfter == 1793975567,
+                    "actual profile-read hook repairs fractional saved deadlines before native cloning in another mode");
+                check(accepted.Status == QuestStatusEnum.Started && accepted.CompletedConditions.Single() == "kept-objective" &&
+                    accepted.StatusTimers[QuestStatusEnum.Started] == 1793971966.517,
+                    "profile-load repair preserves accepted quest status, objectives and fractional history");
+                check(profile.Quests.Count == 7, "inactive-mode timestamp repair does not grant additional quests");
+                mode("Allegiance");
             }
             finally { profile.Quests = previous; }
         }

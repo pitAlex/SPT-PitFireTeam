@@ -2,6 +2,20 @@
 
 Current contracts are indexed in [addon topics](docs/README.md). The [Release test checklist](../docs/validation/Release-Test-2026-11-05.md) records the current candidate. Superseded incremental quest, UI and temporary-kit notes are removed; tracked history retains their evidence. Historical fixture/build/deployment results do not qualify the current tree or live raid behavior.
 
+## 2026-11-07 — Going Rogue 1.0.1 Release package
+
+Client/server project and plugin metadata report **1.0.1**; both compiled assembly versions are **1.0.1.0**. The Core dependency remains 1.1.1. Both Release builds have zero warnings/errors, and the Release native trader/quest harness passes **2,044 checks**, including integer unlock serialization and repair. This does not add live qualification of the reported loading screen.
+
+Created `pitFireTeam-GoingRogue-1.0.1.zip` in LOCAL.md's release destination, with the same 12-file addon layout as 1.0.0: direct `BepInEx/` and `SPT_Runtime/` roots, client/server DLLs, server deps manifest, card, portrait and seven quest images. Compiled BepInEx/SPT metadata and Core minimum were inspected, every archive entry was hash-compared to its Release output, and the deps manifest identifies 1.0.1. ZIP SHA256: `27CD4660AEB3C7A4C318CBDB6F5C5DE9D9C75976B925A784DC2C10A9618F7832`. The adjacent `.manifest.json` records all file hashes. Previous releases and Core packages remain intact. Packaging did not deploy runtime files or create a commit.
+
+## 2026-11-07 — Integer quest unlock timestamps — deployed locally
+
+Reproduced the reported `availableAfter: 1793975566.517` failure through Newtonsoft's strict integer reader. The existing prerequisite helper copied fractional native completion time into a field that SPT represents as nullable double but EFT reads as Int32. New Knight quest deadlines now round up to whole seconds. Existing fractional deadlines on all seven owned quests are normalized before native profile cloning/listing, including outside Allegiance and after a quest has started or completed. Prerequisite backfill/retiming remains Allegiance-only; status, start time, objectives, rewards and valid fractional status-history timestamps are retained. Other traders' quests are excluded.
+
+The added regression failed against the previous production helper, then passed after the fix. **2,044** native trader/quest checks pass, including the exact reported value, actual server JSON through the strict client integer contract, saved-record repair across quest statuses, idempotency, unchanged completion history, other-trader exclusion and the actual profile-read Harmony hook in Guns for Hire. These use synthetic profiles; no real user profile was edited. The Going Rogue server Debug build has zero warnings/errors.
+
+Only the server-addon DLL/PDB were deployed, with both game and server stopped, exact backups and SHA256 verification. [Deployment receipt](../tests/artifacts/knight-integer-deployed-a0baccfa7d4640dea5d6dd4bc3163872/manifest.json). No client/Core binary, release archive or version metadata changed. The affected reporter's profile and live loading screen have not been tested; their addon must be updated to receive the repair.
+
 ## 2026-11-05 — Combat and Team Split
 
 See [assault initiative validation](../docs/validation/Goon-Assault-Initiative.md) and [Team Split validation](../docs/validation/Team-Split.md) for current contracts, controlled checks and verified client deployments. Live combat/menu behavior remains subject to the release-test matrix.
