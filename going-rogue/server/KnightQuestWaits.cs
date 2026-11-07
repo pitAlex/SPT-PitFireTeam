@@ -6,6 +6,24 @@ namespace pitTeam.GoingRogue.Server;
 
 internal static class KnightQuestWaits
 {
+    // EFT reads availableAfter as Int32 even though SPT stores it as double?.
+    // Preserve valid fractional status-history timestamps; only unlock deadlines
+    // need whole seconds. Repair saved records regardless of their current status.
+    internal static bool NormalizeAvailableAfter(BotBase profile)
+    {
+        bool changed = false;
+        foreach (var quest in profile.Quests ?? [])
+        {
+            if (!KnightQuestPolicy.Owns(quest.QId.ToString()) || quest.AvailableAfter is not { } value ||
+                !double.IsFinite(value)) continue;
+            double whole = Math.Ceiling(value);
+            if (whole == value) continue;
+            quest.AvailableAfter = whole;
+            changed = true;
+        }
+        return changed;
+    }
+
     // SPT starts another wait when accepting a delayed quest absent from the
     // profile. Backfill the normal pending record from its prerequisite's real
     // success time, including quests introduced after that success was saved.
@@ -31,6 +49,8 @@ internal static class KnightQuestWaits
                 deadline = Math.Max(deadline, success + wait.AvailableAfter!.Value);
             }
             if (!known) continue;
+            // Never shorten the native prerequisite wait when success includes milliseconds.
+            deadline = Math.Ceiling(deadline);
             var current = profile.Quests?.FirstOrDefault(q => q.QId == definition.Id);
             if (current == null)
             {

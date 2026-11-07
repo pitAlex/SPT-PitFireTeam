@@ -3,10 +3,11 @@ using pitTeam.GoingRogue.Server;
 using SPTarkov.Server.Core.Models.Common;
 using SPTarkov.Server.Core.Models.Eft.Common.Tables;
 using SPTarkov.Server.Core.Models.Enums;
+using SPTarkov.Server.Core.Utils;
 
 internal static class QuestWaitChecks
 {
-    internal static void Run(Dictionary<MongoId, Quest> definitions, Action<bool, string> check)
+    internal static void Run(Dictionary<MongoId, Quest> definitions, JsonUtil json, Action<bool, string> check)
     {
         const double completed = 1793488235;
         var prerequisite = new QuestStatus
@@ -58,5 +59,58 @@ internal static class QuestWaitChecks
             "other traders' quests cannot be backfilled or retimed");
         check(prerequisite.Status == QuestStatusEnum.Success && prerequisite.StatusTimers[QuestStatusEnum.Success] == completed &&
             prerequisite.CompletedConditions.Single() == "existing-condition", "prerequisite completion, rewards and history remain untouched");
+
+        const double reported = 1793975566.517;
+        bool rejected = false;
+        try { Newtonsoft.Json.JsonConvert.DeserializeObject<ClientWait>("{\"availableAfter\":1793975566.517}"); }
+        catch (Newtonsoft.Json.JsonReaderException ex) { rejected = ex.Message.Contains("not a valid integer"); }
+        check(rejected, "EFT's integer JSON contract reproduces the reported fractional-timestamp error");
+        player.Quests = [prerequisite with { StatusTimers = new() { [QuestStatusEnum.Success] = reported - 3600 } }];
+        KnightQuestWaits.Synchronize(player, definitions.Values);
+        pending = player.Quests.Single(q => q.QId.ToString() == KnightQuestPolicy.BadgeBandit);
+        check(pending.AvailableAfter == Math.Ceiling(reported), "fractional completion time produces a whole-second deadline without shortening the wait");
+        var wire = json.Serialize(pending)!;
+        check(Newtonsoft.Json.JsonConvert.DeserializeObject<ClientWait>(wire)!.AvailableAfter == 1793975567,
+            "server quest serialization round-trips through EFT's strict integer reader");
+        check(player.Quests[0].StatusTimers[QuestStatusEnum.Success] == reported - 3600,
+            "fractional native completion history remains unchanged");
+        check(!KnightQuestWaits.Synchronize(player, definitions.Values), "whole-second delayed quest calculation is idempotent");
+        pending.AvailableAfter = reported;
+        check(KnightQuestWaits.Synchronize(player, definitions.Values) && pending.AvailableAfter == Math.Ceiling(reported),
+            "existing pending deadline is repaired by the same rounded calculation");
+
+        foreach (var questId in definitions.Keys.Where(id => KnightQuestPolicy.Owns(id.ToString())))
+        foreach (var status in new[] { QuestStatusEnum.AvailableAfter, QuestStatusEnum.Started, QuestStatusEnum.Success, QuestStatusEnum.Fail })
+        {
+            var saved = new QuestStatus
+            {
+                QId = questId, Status = status, StartTime = 123,
+                AvailableAfter = reported, CompletedConditions = ["retained-objective"],
+                StatusTimers = new() { [status] = reported - 3600 }
+            };
+            player.Quests = [saved]; // No prerequisite needed to repair the wire field.
+            check(KnightQuestWaits.NormalizeAvailableAfter(player) && saved.AvailableAfter == 1793975567,
+                "saved fractional deadline repaired: " + questId + " / " + status);
+            check(saved.Status == status && saved.StartTime == 123 && saved.CompletedConditions.Single() == "retained-objective" &&
+                saved.StatusTimers[status] == reported - 3600,
+                "timestamp repair preserves quest progress and history: " + questId + " / " + status);
+            check(Newtonsoft.Json.JsonConvert.DeserializeObject<ClientWait>(json.Serialize(saved)!)!.AvailableAfter == 1793975567 &&
+                !KnightQuestWaits.NormalizeAvailableAfter(player), "repaired wire parses and a second read makes no changes");
+        }
+        foreach (double? valid in new double?[] { null, 0, 1793975567 })
+        {
+            pending.AvailableAfter = valid; player.Quests = [pending];
+            check(!KnightQuestWaits.NormalizeAvailableAfter(player) && pending.AvailableAfter == valid,
+                "absent, zero and whole-second values stay unchanged: " + valid);
+        }
+        pending.QId = foreign.Id; pending.AvailableAfter = reported;
+        check(!KnightQuestWaits.NormalizeAvailableAfter(player) && pending.AvailableAfter == reported,
+            "Knight repair never rewrites another trader's quest");
+    }
+
+    private sealed class ClientWait
+    {
+        [Newtonsoft.Json.JsonProperty("availableAfter")]
+        public int AvailableAfter { get; set; }
     }
 }

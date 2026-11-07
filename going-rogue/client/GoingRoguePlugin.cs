@@ -10,7 +10,7 @@ using UnityEngine;
 
 namespace pitTeam.GoingRogue;
 
-[BepInPlugin("xyz.pit.fireteam.goingrogue", "PitFireTeam Going Rogue", "1.0.0")]
+[BepInPlugin("xyz.pit.fireteam.goingrogue", "PitFireTeam Going Rogue", "1.0.1")]
 [BepInDependency("xyz.pit.fireteam", "1.1.1")]
 [BepInDependency("xyz.drakia.bigbrain", BepInDependency.DependencyFlags.HardDependency)]
 public sealed class GoingRoguePlugin : BaseUnityPlugin
