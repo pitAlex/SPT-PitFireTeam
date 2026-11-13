@@ -16,7 +16,7 @@ public static class FriendlyTeammateIdentityPolicy
     public static string DisplayName(string id, string? name, IReadOnlyDictionary<string, string> selected,
         IReadOnlyDictionary<string, string> english)
     {
-        // EFT BaseCustomizationItem.NameLocalizationKey uses this key for heads and voices alike.
+        // EFT BaseCustomizationItem.NameLocalizationKey uses this key for customization templates.
         string key = id + " Name";
         foreach (var language in new[] { selected, english })
             if (language.TryGetValue(key, out string? value) && !string.IsNullOrWhiteSpace(value) && value != key)

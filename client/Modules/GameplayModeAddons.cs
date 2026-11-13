@@ -74,7 +74,7 @@ namespace pitTeam.Modules
         public static bool OwnsCompanionCombat(string role) =>
             Registered.Contains(Current) && companionCombatPolicy?.Invoke(role) == true;
         public static GameplayMode Current => GameplayModeRuntime.Current;
-        public static bool HasSelectedBossCompanions => Utils.SpawnHelper.spawnMemberIdsBoss.Count > 0 ||
+        public static bool HasSelectedBossCompanions => Utils.SpawnHelper.spawnMemberIdsBoss.Count > 0 || FollowerTransitStateCache.HasCarriedGoons ||
             (Current == GameplayMode.Allegiance && Registered.Contains(Current) && goonCompanionsPresent?.Invoke() == true);
         public static bool IsRogueRaid => Current == GameplayMode.Allegiance && Registered.Contains(Current) && rogueCompanionsPresent?.Invoke() == true;
         public static bool IsExUsecFriendlyRaid => RecruitmentFriendship("exUsec") ?? (IsRogueRaid && exUsecFriendshipEnabled);

@@ -2,11 +2,21 @@
 
 Current contracts are indexed in [addon topics](docs/README.md). The [Release test checklist](../docs/validation/Release-Test-2026-11-05.md) records the current candidate. Superseded incremental quest, UI and temporary-kit notes are removed; tracked history retains their evidence. Historical fixture/build/deployment results do not qualify the current tree or live raid behavior.
 
+## 2026-11-13 — Saved Goons in mixed-squad transit
+
+The Shoreline-to-Labyrinth log records successful capture and reuse of the carried profiles for Knight, Big Pipe and Rusak. Only Rusak reached native creation and follower registration. The Labyrinth recorder contains 215 entries referencing Rusak and none referencing Knight or Big Pipe. Transit had queued saved Goons by role, then startup selected only the account-based squad route because Rusak was present.
+
+Core now queues saved Goons by account and restores their own carried profiles. Eligible temporary bosses retain role-based transit. The carried-Goon marker preserves hostile-wave suppression before the addon resolves the roster. The production wave/transit fixture passes 20 checks, the saved-settings fixture passes 12, and the Core 1.1.2 Debug client build has zero warnings/errors. Installation stopped before copying because Tarkov was running. The staged build is ready for deployment and a fresh mixed-squad transit test.
+
 ## 2026-11-07 — Going Rogue 1.0.1 Release package
 
 Client/server project and plugin metadata report **1.0.1**; both compiled assembly versions are **1.0.1.0**. The Core dependency remains 1.1.1. Both Release builds have zero warnings/errors, and the Release native trader/quest harness passes **2,044 checks**, including integer unlock serialization and repair. This does not add live qualification of the reported loading screen.
 
 Created `pitFireTeam-GoingRogue-1.0.1.zip` in LOCAL.md's release destination, with the same 12-file addon layout as 1.0.0: direct `BepInEx/` and `SPT_Runtime/` roots, client/server DLLs, server deps manifest, card, portrait and seven quest images. Compiled BepInEx/SPT metadata and Core minimum were inspected, every archive entry was hash-compared to its Release output, and the deps manifest identifies 1.0.1. ZIP SHA256: `27CD4660AEB3C7A4C318CBDB6F5C5DE9D9C75976B925A784DC2C10A9618F7832`. The adjacent `.manifest.json` records all file hashes. Previous releases and Core packages remain intact. Packaging did not deploy runtime files or create a commit.
+
+### 1.0.1 Release deployment
+
+At the user's request, deployed the verified 1.0.1 archive plus matching Release symbols with Tarkov and SPT.Server stopped. All **14 files** were backed up where present and SHA256-verified. Core's client/server hashes remained unchanged; no profile, teammate database or configuration was replaced. [Deployment receipt and backups](../tests/artifacts/going-rogue-1.0.1-deployed-8ec377545d1b48c8addfc38c17fb8802/manifest.json). The game/server were not launched; this confirms installed files rather than live profile loading.
 
 ## 2026-11-07 — Integer quest unlock timestamps — deployed locally
 

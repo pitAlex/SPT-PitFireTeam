@@ -19,6 +19,8 @@ public static class FriendlyTeammateEditorPolicy
             Revision = Revision(profile, equipment),
             HeadId = root["Customization"]?["Head"]?.GetValue<string>() ?? "",
             VoiceId = root["Customization"]?["Voice"]?.GetValue<string>() ?? "",
+            BodyId = root["Customization"]?["Body"]?.GetValue<string>() ?? "",
+            FeetId = root["Customization"]?["Feet"]?.GetValue<string>() ?? "",
             Nickname = root["Info"]?["Nickname"]?.GetValue<string>() ?? "",
             Level = root["Info"]?["Level"]?.GetValue<int>() ?? 1,
             Experience = root["Info"]?["Experience"]?.GetValue<int>() ?? 0,
@@ -36,7 +38,8 @@ public static class FriendlyTeammateEditorPolicy
     }
 
     public static (string Profile, string? Equipment) Apply(string profile, string? equipment, TeammateEditorDraft edit,
-        IReadOnlySet<string> heads, IReadOnlyDictionary<string, TeammateEditorPocket> pockets, IReadOnlySet<string>? voices = null)
+        IReadOnlySet<string> heads, IReadOnlyDictionary<string, TeammateEditorPocket> pockets, IReadOnlySet<string>? voices = null,
+        IReadOnlyDictionary<string, string>? handsByBody = null, IReadOnlySet<string>? feet = null)
     {
         if (edit == null || edit.Revision != Revision(profile, equipment)) Fail("EditorStale");
         var root = JsonNode.Parse(profile)!.AsObject();
@@ -58,6 +61,20 @@ public static class FriendlyTeammateEditorPolicy
         root["Info"]!["Level"] = edit.Level;
         root["Info"]!["Experience"] = edit.Experience;
         if (edit.HeadId != original.HeadId) root["Customization"]!["Head"] = edit.HeadId;
+        if (edit.BodyId != original.BodyId)
+        {
+            if (string.IsNullOrEmpty(edit.BodyId) || handsByBody == null || !handsByBody.TryGetValue(edit.BodyId, out string? handsId))
+                throw new InvalidDataException("EditorInvalidUpperClothing");
+            var customization = (JsonObject)(root["Customization"] ??= new JsonObject());
+            customization["Body"] = edit.BodyId;
+            customization["Hands"] = handsId;
+        }
+        if (edit.FeetId != original.FeetId)
+        {
+            if (string.IsNullOrEmpty(edit.FeetId) || feet == null || !feet.Contains(edit.FeetId)) Fail("EditorInvalidLowerClothing");
+            var customization = (JsonObject)(root["Customization"] ??= new JsonObject());
+            customization["Feet"] = edit.FeetId;
+        }
 
         var skills = SkillNodes(root).ToList();
         if (edit.Skills == null || edit.Skills.Count != skills.Count ||

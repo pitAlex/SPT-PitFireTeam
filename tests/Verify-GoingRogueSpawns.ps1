@@ -10,6 +10,13 @@ if (Test-Path (Join-Path $RepositoryRoot 'going-rogue/client/Quests/PartizanQues
 $block = $source.IndexOf('spawner.SetBlockedRoles(blocked.Concat(new[] { "bossKnight", "followerBirdEye", "followerBigPipe" })')
 $spawn = $source.IndexOf('Modules.Logger.LogInfo("Start Squad Spawn")')
 if ($block -lt 0 -or $block -gt $spawn) { throw 'Native role blocking must precede saved-profile spawning' }
+$transit = Get-Content -Raw (Join-Path $RepositoryRoot 'client/Patches/TransitPointPatch.cs')
+$route = [regex]::Match($transit, '(?ms)^ +if \(player\.Profile\.Side == EPlayerSide\.Savage\) Utils\.SpawnHelper\.spawnMemberIdsScav\.Add.*?^ +else Utils\.SpawnHelper\.spawnMemberIds\.Add\(bot\.AccountId\);').Value
+$cache = Get-Content -Raw (Join-Path $RepositoryRoot 'client/Modules/FollowerTransitStateCache.cs')
+$consume = [regex]::Match($cache, '(?ms)^        public static bool TryConsumeProfile\(.*?^        \}').Value
+$addonPolicy = Get-Content -Raw (Join-Path $RepositoryRoot 'client/Modules/GameplayModeAddons.cs')
+$bossSelection = [regex]::Match($addonPolicy, '(?ms)^        public static bool HasSelectedBossCompanions =>.*?;').Value
+if (!$route -or !$consume -or !$bossSelection) { throw 'Missing production transit routing or companion selection' }
 if ($GameRoot) {
     [Reflection.Assembly]::LoadFrom((Join-Path $RepositoryRoot 'client/libs/Mono.Cecil.dll')) | Out-Null
     $module = [Mono.Cecil.ModuleDefinition]::ReadModule((Join-Path $GameRoot 'EscapeFromTarkov_Data/Managed/Assembly-CSharp.dll'))
@@ -32,25 +39,59 @@ $fixture = @'
 using System;
 using System.Collections.Generic;
 using System.Linq;
-public enum WildSpawnType { bossKnight, bossOther, bossKolontay, bossPartisan }
+public enum WildSpawnType { bossKnight, followerBigPipe, followerBirdEye, pmcUSEC, bossOther, bossKolontay, bossPartisan }
 public enum EPlayerSide { Usec, Savage }
 public enum EQuestStatus { Started }
+public enum GameplayMode { Allegiance }
 public class AbstractGame {}
 public static class Singleton<T> { public static bool Instantiated=true; }
 public class Health { public bool IsAlive=true; }
 public class Quest { public string Id="quest"; public EQuestStatus Status=EQuestStatus.Started; }
-public class Profile { public List<Quest> QuestsData=new List<Quest>{new Quest()}; }
+public class Settings { public WildSpawnType Role; }
+public class Info { public Settings Settings=new Settings(); }
+public class Profile {
+    public List<Quest> QuestsData=new List<Quest>{new Quest()};
+    public EPlayerSide Side;
+    public Info Info=new Info();
+    public string Nickname,ProfileId;
+    public Profile Clone() => (Profile)MemberwiseClone();
+}
+public class BotOwner { public string AccountId; }
+public class Follower { public bool IsRosterMember; }
 public class Player { public Health HealthController=new Health();public EPlayerSide Side;public Profile Profile=new Profile(); }
 public static class GamePlayerOwner { public static Player MyPlayer=new Player(); }
 public class Wave { public WildSpawnType BossType;public bool ShallSpawn=true,ForceSpawn=true; }
 public class BossSpawnScenario { public List<Wave> BossSpawnWaves=new List<Wave>(); }
 public static class GameplayModeAddons { public static bool HasSelectedBossCompanions; }
+public static class FollowerTransitStateCache { public static bool HasCarriedGoons; }
+namespace Modules { public static class Logger { public static void LogInfo(string message) {} } }
 namespace Utils {
     public static class Utils { public static bool Quest;public static bool FlagGet(string flag)=>Quest; }
     public static class Props { public static Dictionary<WildSpawnType,List<string>> QuestBosses=new Dictionary<WildSpawnType,List<string>>{{WildSpawnType.bossKnight,new List<string>{"quest"}},{WildSpawnType.bossKolontay,new List<string>{"quest"}}}; }
+    public static class SpawnHelper {
+        public static List<string> spawnMemberIds=new List<string>(),spawnMemberIdsScav=new List<string>();
+        public static List<WildSpawnType> spawnMemberIdsBoss=new List<WildSpawnType>();
+    }
 }
 public class Fixture {
 __METHOD__
+    static void Route(Player player, BotOwner bot, Follower follower, Profile transitProfile, bool isBoss) {
+__ROUTE__
+    }
+    static GameplayMode Current=GameplayMode.Allegiance;
+    static HashSet<GameplayMode> Registered=new HashSet<GameplayMode>();
+    static Func<bool> goonCompanionsPresent=()=>false;
+__BOSS_SELECTION__
+    class TransitFollowerState { public Profile Profile; }
+    static Dictionary<string,TransitFollowerState> carried=new Dictionary<string,TransitFollowerState>();
+    static string GetRoleKey(WildSpawnType role)=>"role:"+role;
+    static bool TryTakeState(string key,out TransitFollowerState state) {
+        if(!carried.TryGetValue(key,out state)) return false;
+        carried.Remove(key);
+        return true;
+    }
+    static void TrackTransitSpawnProfile(Profile profile,TransitFollowerState state) {}
+__CONSUME__
     static int checks;
     static void Check(bool value,string reason){if(!value)throw new Exception(reason);checks++;}
     public static void Main(){
@@ -75,11 +116,36 @@ __METHOD__
             PatchPrefix(new BossSpawnScenario{BossSpawnWaves=new List<Wave>{partisan}});
             Check(partisan.ShallSpawn==nativeSpawn && partisan.ForceSpawn==nativeSpawn,"Partizan keeps the native wave decision during quest companion raids");
         }
+        var pmc=new Player();var saved=new Follower{IsRosterMember=true};
+        var roles=new[]{WildSpawnType.bossKnight,WildSpawnType.followerBigPipe,WildSpawnType.followerBirdEye};
+        foreach(var role in roles) {
+            var profile=new Profile();profile.Info.Settings.Role=role;
+            Route(pmc,new BotOwner{AccountId=role.ToString()},saved,profile,true);
+        }
+        Route(pmc,new BotOwner{AccountId="Rusak"},saved,new Profile(),false);
+        Check(Utils.SpawnHelper.spawnMemberIds.SequenceEqual(roles.Select(role=>role.ToString()).Concat(new[]{"Rusak"})),"mixed squad queues every saved Goon and PMC in the account route");
+        Check(Utils.SpawnHelper.spawnMemberIdsBoss.Count==0,"saved Goons do not enter role-only prefetch or spawning");
+        Check(!HasSelectedBossCompanions,"ordinary account selection alone does not suppress hostile Goons");
+        FollowerTransitStateCache.HasCarriedGoons=true;
+        Check(HasSelectedBossCompanions,"carried Goons suppress hostile waves before addon selection resolves");
+        FollowerTransitStateCache.HasCarriedGoons=false;
+        var temporary=new Profile();temporary.Info.Settings.Role=WildSpawnType.bossKnight;
+        Route(pmc,new BotOwner(),new Follower(),temporary,true);
+        Check(Utils.SpawnHelper.spawnMemberIdsBoss.SequenceEqual(new[]{WildSpawnType.bossKnight}),"eligible unsaved boss retains the role route");
+        var scav=new Player();scav.Profile.Side=EPlayerSide.Savage;
+        Route(scav,new BotOwner{AccountId="scav"},saved,new Profile(),false);
+        Check(Utils.SpawnHelper.spawnMemberIdsScav.SequenceEqual(new[]{"scav"}),"player-Scav transit keeps its own route");
+        carried["knight"]=new TransitFollowerState{Profile=new Profile{ProfileId="carriedKnight"}};
+        carried[GetRoleKey(WildSpawnType.pmcUSEC)]=new TransitFollowerState{Profile=new Profile{ProfileId="otherPmc"}};
+        Check(TryConsumeProfile("knight",WildSpawnType.pmcUSEC,out var knight)&&knight.ProfileId=="carriedKnight","saved Goon restores its exact snapshot even with a PMC generation role");
+        Check(!TryConsumeProfile("missing",WildSpawnType.pmcUSEC,out _),"missing saved account cannot steal another follower's role snapshot");
+        carried[GetRoleKey(WildSpawnType.bossKnight)]=new TransitFollowerState{Profile=new Profile{ProfileId="legacyKnight"}};
+        Check(TryConsumeProfile(null,WildSpawnType.bossKnight,out var legacy)&&legacy.ProfileId=="legacyKnight","accountless legacy boss still restores by role");
         Console.WriteLine("PASS: "+checks+" production Goons wave checks; native role gate precedes saved-profile spawning.");
     }
 }
 '@
-$fixture = $fixture.Replace('__METHOD__', $method)
+$fixture = $fixture.Replace('__METHOD__', $method).Replace('__ROUTE__', $route).Replace('__CONSUME__', $consume).Replace('__BOSS_SELECTION__', $bossSelection)
 $sdk = dotnet --list-sdks | Select-Object -Last 1
 if ($sdk -notmatch '^(\S+) \[(.+)\]$') { throw 'SDK missing' }
 $compiler = Join-Path $Matches[2] ($Matches[1] + '/Roslyn/bincore/csc.dll')
