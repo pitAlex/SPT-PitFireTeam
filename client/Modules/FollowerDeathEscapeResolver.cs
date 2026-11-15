@@ -53,6 +53,7 @@ namespace pitTeam.Modules
         public float CurrentFightEnemyAveragePower { get; set; }
         public int RouteEnemyCount { get; set; }
         public int CurrentFightEnemyCount { get; set; }
+        // Team Escape sends effective squad strength through the existing server field.
         public int AliveSquadmates { get; set; }
         public bool HasSecureMeds { get; set; }
         public bool VitalsDestroyed { get; set; }
@@ -67,6 +68,7 @@ namespace pitTeam.Modules
         private const string LostOnDeathRoute = "/singleplayer/pitfireteam/lostondeath";
         private const float DeathGearRecoveryDistance = 70f;
         private const float FallenTeammateSnapshotRadius = 50f;
+        private const int BossEscapeSupportWeight = 2;
 
         private static readonly EBodyPart[] HealthParts =
         {
@@ -100,7 +102,8 @@ namespace pitTeam.Modules
                 // Include all squadmates in the result so already-dead followers appear in the summary,
                 // but only followers still alive at player death get an escape roll.
                 List<BotFollowerPlayer> squadmates = followers
-                    .Where(follower => follower?.GetBot() != null && follower.IsSquadMate)
+                    .Where(follower => follower is not BossFollowerPlayer &&
+                                       follower?.IsSquadMate == true && follower.GetBot() != null)
                     .ToList();
 
                 if (squadmates.Count > 0)
@@ -111,17 +114,7 @@ namespace pitTeam.Modules
                     BossPlayers.SaveFollowersProgress(squadmates);
                 }
 
-                List<BotFollowerPlayer> aliveSquadmates = squadmates
-                    .Where(follower =>
-                    {
-                        BotOwner bot = follower?.GetBot();
-                        return bot != null &&
-                               bot.BotState == EBotState.Active &&
-                               bot.GetPlayer != null &&
-                               bot.HealthController?.IsAlive == true;
-                    })
-                    .ToList();
-                int aliveCount = aliveSquadmates.Count;
+                int livingSquadStrength = CalculateLivingSquadStrength(followers);
 
                 if (squadmates.Count == 0)
                 {
@@ -150,7 +143,7 @@ namespace pitTeam.Modules
                     // player death. With it disabled, live squadmates do not roll or recover gear,
                     // but they still need a lost raid outcome so sessions/deaths stay accurate.
                     Logger.LogInfo("[DeathEscape] Player died, Team Escape is disabled; persisting live and fallen squadmate loss outcomes.");
-                    List<FollowerDeathEscapeOutcomeEntry> lostEntries = CreateLostOutcomesForSquadmates(squadmates, aliveCount);
+                    List<FollowerDeathEscapeOutcomeEntry> lostEntries = CreateLostOutcomesForSquadmates(squadmates, livingSquadStrength);
                     AddMissingFallenSquadmateOutcomes(lostEntries);
                     if (lostEntries.Count > 0)
                     {
@@ -173,7 +166,7 @@ namespace pitTeam.Modules
                     squadmates.Select(follower => follower.GetBot()));
 
                 Logger.LogInfo(
-                    $"[DeathEscape] Resolving follower escape rolls. squadmates={squadmates.Count} alive={aliveCount} " +
+                    $"[DeathEscape] Resolving follower escape rolls. squadmates={squadmates.Count} livingSquadStrength={livingSquadStrength} " +
                     $"extract='{extract.Name}' distance={extract.Distance:0.0}");
 
                 List<FollowerDeathEscapeOutcomeEntry> entries = new List<FollowerDeathEscapeOutcomeEntry>();
@@ -181,15 +174,13 @@ namespace pitTeam.Modules
                 Dictionary<string, BotOwner> entryBotsByAid = new Dictionary<string, BotOwner>(StringComparer.Ordinal);
                 Dictionary<string, BotOwner> liveBotsByAid = new Dictionary<string, BotOwner>(StringComparer.Ordinal);
 
-                // Each follower rolls independently. Squad count and extraction route are shared inputs,
+                // Each eligible squadmate rolls independently. Living support and extraction route are shared inputs,
                 // while health, gear power, and secure meds are follower-specific.
                 foreach (BotFollowerPlayer follower in squadmates)
                 {
                     BotOwner bot = follower.GetBot();
                     FollowerReadiness readiness = SnapshotReadiness(bot);
-                    bool alive = bot.BotState == EBotState.Active &&
-                                 bot.GetPlayer != null &&
-                                 bot.HealthController?.IsAlive == true;
+                    bool alive = IsLivingEscapeFollower(bot);
                     RouteThreatSnapshot routeThreat = alive
                         ? CalculateRouteEnemyAveragePower(boss, bot.Position, extract)
                         : RouteThreatSnapshot.Empty;
@@ -219,7 +210,7 @@ namespace pitTeam.Modules
                         CurrentFightEnemyAveragePower = fightThreat.AveragePower,
                         RouteEnemyCount = routeThreat.Count,
                         CurrentFightEnemyCount = fightThreat.Count,
-                        AliveSquadmates = aliveCount,
+                        AliveSquadmates = livingSquadStrength,
                         HasSecureMeds = readiness.HasSecureMeds,
                         VitalsDestroyed = readiness.VitalsDestroyed,
                         RaidHealth = FollowerRaidHealthRetention.Capture(bot.GetPlayer),
@@ -270,7 +261,21 @@ namespace pitTeam.Modules
             }
         }
 
-        private static List<FollowerDeathEscapeOutcomeEntry> CreateLostOutcomesForSquadmates(List<BotFollowerPlayer> squadmates, int aliveCount)
+        private static int CalculateLivingSquadStrength(IEnumerable<BotFollowerPlayer> followers)
+        {
+            return followers
+                .Where(follower => (follower is BossFollowerPlayer || follower?.IsSquadMate == true) &&
+                                   IsLivingEscapeFollower(follower.GetBot()))
+                .Sum(follower => follower is BossFollowerPlayer ? BossEscapeSupportWeight : 1);
+        }
+
+        private static bool IsLivingEscapeFollower(BotOwner bot)
+        {
+            return bot != null && bot.BotState == EBotState.Active &&
+                   bot.GetPlayer != null && bot.HealthController?.IsAlive == true;
+        }
+
+        private static List<FollowerDeathEscapeOutcomeEntry> CreateLostOutcomesForSquadmates(List<BotFollowerPlayer> squadmates, int livingSquadStrength)
         {
             List<FollowerDeathEscapeOutcomeEntry> entries = new List<FollowerDeathEscapeOutcomeEntry>();
             if (squadmates == null || squadmates.Count == 0)
@@ -311,7 +316,7 @@ namespace pitTeam.Modules
                     CurrentFightEnemyAveragePower = 0f,
                     RouteEnemyCount = 0,
                     CurrentFightEnemyCount = 0,
-                    AliveSquadmates = aliveCount,
+                    AliveSquadmates = livingSquadStrength,
                     HasSecureMeds = readiness.HasSecureMeds,
                     VitalsDestroyed = readiness.VitalsDestroyed,
                     RaidHealth = FollowerRaidHealthRetention.Capture(bot.GetPlayer),

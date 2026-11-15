@@ -356,6 +356,12 @@ namespace pitTeam.Modules
 
         internal static bool HasActiveOrPendingHealWork(BotOwner bot)
         {
+            if (bot?.GetPlayer?.HandsController is Player.MedsController ||
+                bot?.Medecine?.Using == true)
+            {
+                return true;
+            }
+
             if (bot?.Medecine == null)
             {
                 return false;

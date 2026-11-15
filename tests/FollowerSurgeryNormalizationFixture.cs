@@ -5,7 +5,7 @@ using EFT;
 namespace EFT
 {
     public enum EBodyPart { Head, Chest, Stomach, LeftArm, RightArm, LeftLeg, RightLeg }
-    public class Player { public Health ActiveHealthController = new Health(); public bool Bleeding; }
+    public class Player { public Health ActiveHealthController = new Health(); public bool Bleeding, UsableSurgeryKit; }
     public class Health
     {
         public readonly Dictionary<EBodyPart,float> Hp = new Dictionary<EBodyPart,float>();
@@ -23,6 +23,7 @@ namespace pitTeam.Utils
         const float EmergencySurgeryHealthPenalty=.5f;
         static readonly EBodyPart[] SurgeryRecoveryParts={EBodyPart.Stomach,EBodyPart.LeftArm,EBodyPart.RightArm,EBodyPart.LeftLeg,EBodyPart.RightLeg};
         static bool HasActiveBleeding(Player p) => p.Bleeding;
+        static bool HasUsableSurgeryKit(Player p) => p.UsableSurgeryKit;
         static void ClampImpossibleBodyPartHealth(Player p,EBodyPart part) { }
         /* PRODUCTION NORMALIZATION */
         public static void Refresh(Player p) => NormalizeSurgeryRecoveredPartsForFirstAid(p);
@@ -48,6 +49,11 @@ public static class SurgeryNormalizationChecks
         Check(p.ActiveHealthController.Restores==1&&p.ActiveHealthController.Maximum[EBodyPart.RightLeg]==60,"new bleeding also protects other blacked limbs");
         p.Bleeding=false;pitTeam.Utils.FollowerMedical.Refresh(p);
         Check(p.ActiveHealthController.Restores==2,"new injury remains recoverable once bleeding stops");
+        p.ActiveHealthController.Hp[EBodyPart.RightArm]=0;
+        p.UsableSurgeryKit=true;pitTeam.Utils.FollowerMedical.Refresh(p);
+        Check(p.ActiveHealthController.Restores==2&&p.ActiveHealthController.Hp[EBodyPart.RightArm]==0,"a usable kit reserves the destroyed part for native surgery");
+        p.UsableSurgeryKit=false;pitTeam.Utils.FollowerMedical.Refresh(p);
+        Check(p.ActiveHealthController.Restores==3,"emergency recovery resumes if a kit is unavailable");
         pitTeam.Utils.FollowerMedical.Refresh(null);pitTeam.Utils.FollowerMedical.Refresh(new Player{ActiveHealthController=null});
         Check(true,"missing player or health is safe");
         return count;

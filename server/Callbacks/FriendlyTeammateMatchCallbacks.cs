@@ -106,10 +106,14 @@ public class FriendlyTeammateMatchCallbacks(
         string profileId = teammate?.Id.ToString() ?? request.MemberId ?? "unknown";
         insuranceDiagnostics.CaptureGeneratedFollower(sessionId, teammate);
         HashSet<string> protectedSpawnIds = teammateService.GetProtectedSpawnItemIdsForExtraction(teammate);
-        postRaidService.RegisterProtectedRaidItemIds(
-            sessionId,
-            protectedSpawnIds,
-            $"server-generated teammate spawn equipment {profileId}");
+        if (teammateService.ProtectsCompanionSpawnInventory(teammate))
+        {
+            postRaidService.RegisterCompanionSpawnProtection(sessionId, profileId, protectedSpawnIds);
+        }
+        else
+        {
+            postRaidService.RegisterProtectedRaidItemIds(sessionId, protectedSpawnIds, $"server-generated teammate spawn equipment {profileId}");
+        }
 
         return new ValueTask<string>(httpResponseUtil.GetBody(new[] { teammate }));
     }

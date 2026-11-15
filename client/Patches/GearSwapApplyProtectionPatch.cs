@@ -64,6 +64,39 @@ namespace pitTeam.Patches
         }
     }
 
+    // External AI and native callers can start treatment outside the paused bot brain.
+    internal sealed class GearSwapApplyFirstAidPatch : ModulePatch
+    {
+        protected override MethodBase GetTargetMethod() =>
+            AccessTools.Method(typeof(BotFirstAid), nameof(BotFirstAid.ApplyToSelf));
+
+        [PatchPrefix, HarmonyPriority(Priority.First)]
+        private static bool Prefix(BotFirstAid __instance) => !TeammateGearSwap.Protects(__instance?._owner?.GetPlayer);
+    }
+
+    internal sealed class GearSwapApplySurgeryPatch : ModulePatch
+    {
+        protected override MethodBase GetTargetMethod() =>
+            AccessTools.Method(typeof(BotSurgicalKit), nameof(BotSurgicalKit.ApplyToCurrentPart));
+
+        [PatchPrefix, HarmonyPriority(Priority.First)]
+        private static bool Prefix(BotSurgicalKit __instance) => !TeammateGearSwap.Protects(__instance?._owner?.GetPlayer);
+    }
+
+    internal sealed class GearSwapApplyStimulatorPatch : ModulePatch
+    {
+        protected override MethodBase GetTargetMethod() =>
+            AccessTools.Method(typeof(BotStimulators), nameof(BotStimulators.TryApply));
+
+        [PatchPrefix, HarmonyPriority(Priority.First)]
+        private static bool Prefix(BotStimulators __instance, Action<bool> callback)
+        {
+            if (!TeammateGearSwap.Protects(__instance?._owner?.GetPlayer)) return true;
+            callback?.Invoke(false);
+            return false;
+        }
+    }
+
     internal sealed class GearSwapApplyShotPatch : ModulePatch
     {
         protected override MethodBase GetTargetMethod() => AccessTools.Method(typeof(Player), nameof(Player.ApplyShot));

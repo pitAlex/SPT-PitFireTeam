@@ -6,6 +6,7 @@ using EFT.InventoryLogic;
 using pitTeam.Components;
 using HarmonyLib;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using SPT.Common.Http;
 using System;
 using System.Collections.Generic;
@@ -59,6 +60,7 @@ namespace pitTeam.Modules
 
         private Dictionary<string, List<string>>? _followersEquipment;
         private readonly HashSet<string> _bossProtectedProfiles = new HashSet<string>(StringComparer.Ordinal);
+        private GameWorld _companionDropWorld;
 
         private bool _isBossDead = false;
         private static readonly bool EnableBackendItemReturn = true;
@@ -661,6 +663,9 @@ namespace pitTeam.Modules
         public void Destroy()
         {
             if (IsDisposed) return;
+
+            if (_companionDropWorld != null) _companionDropWorld.OnThrowItem -= OnCompanionGearDropped;
+            _companionDropWorld = null;
 
 
             try
@@ -2576,7 +2581,11 @@ namespace pitTeam.Modules
             }
 
             bool protectedBoss = Utils.Props.BossFollowersType.Contains(profile.Info.Settings.Role);
-            if (protectedBoss) Instance._bossProtectedProfiles.Add(profile.ProfileId);
+            if (protectedBoss)
+            {
+                Instance._bossProtectedProfiles.Add(profile.ProfileId);
+                Instance.ObserveCompanionDrops();
+            }
             if (!Instance._followersEquipment.ContainsKey(profile.ProfileId))
             {
                 if (FollowerTransitStateCache.TryConsumeProtectedEquipmentIds(profile, out List<string> carriedProtectedItems))
@@ -2623,6 +2632,47 @@ namespace pitTeam.Modules
                     // extraction protection is registered when the spawn profile is generated,
                     // because the backend already owns that prepared equipment graph.
                 }
+            }
+        }
+
+        private void ObserveCompanionDrops()
+        {
+            if (_companionDropWorld != null || !Singleton<GameWorld>.Instantiated) return;
+            _companionDropWorld = Singleton<GameWorld>.Instance;
+            // Native throws and committed Give Gear world drops publish this event with LastOwner set.
+            _companionDropWorld.OnThrowItem = (GlobalEventDispatcher.GDelegate15)OnCompanionGearDropped +
+                _companionDropWorld.OnThrowItem;
+        }
+
+        private void OnCompanionGearDropped(LootItem loot)
+        {
+            string profileId = null;
+            try
+            {
+                profileId = loot?.LastOwner?.ProfileId;
+                if (profileId == null || !_bossProtectedProfiles.Contains(profileId) ||
+                    _followersEquipment?.TryGetValue(profileId, out var protectedIds) != true) return;
+
+                Item root = loot.ItemOwner?.RootItem;
+                if (root == null) return;
+                var droppedIds = GetItemTreeIds(root);
+                droppedIds.IntersectWith(protectedIds);
+                if (droppedIds.Count == 0) return;
+
+                // Confirm before pickup or transit can lead to an extraction submission.
+                var request = JsonConvert.SerializeObject(new { droppingCompanionProfileId = profileId, droppedCompanionItemIds = droppedIds });
+                var response = JObject.Parse(RequestHandler.PostJson(ProtectedRaidItemsRoute, request));
+                if (response["err"]?.Value<int>() != 0 || response["data"] is not JArray accepted)
+                    throw new InvalidOperationException("Missing dropped-gear protection acknowledgement.");
+
+                var released = new HashSet<string>(accepted.Values<string>(), StringComparer.Ordinal);
+                protectedIds.RemoveAll(id => released.Contains(id) && droppedIds.Contains(id));
+                if (!droppedIds.All(released.Contains))
+                    Logger.LogError($"[CompanionGear] Server did not release every dropped protected item from {profileId}.");
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"[CompanionGear] Failed to release protection for gear dropped by {profileId}: {ex}");
             }
         }
 

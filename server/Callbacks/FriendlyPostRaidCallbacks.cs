@@ -62,12 +62,14 @@ public class FriendlyPostRaidCallbacks(
 
     public ValueTask<string> RegisterProtectedItems(string url, FriendlyPostRaidProtectedItemsRequest request, MongoId sessionId)
     {
-        postRaidService.RegisterProtectedRaidItems(sessionId, request);
-        return new ValueTask<string>(httpResponse.NullResponse());
+        string[] released = postRaidService.RegisterProtectedRaidItems(sessionId, request);
+        return new ValueTask<string>(request?.DroppingCompanionProfileId == null
+            ? httpResponse.NullResponse() : httpResponse.GetBody(released));
     }
 
     public ValueTask<string> StartLocalRaid(string url, StartLocalRaidRequestData request, MongoId sessionId, string? output)
     {
+        FriendlyPostRaidService.BeginCompanionRaid(sessionId, output);
         insuranceDiagnostics.BeginRaid(sessionId, request, output);
         scavCargo.BeginRaid(sessionId, output, request);
         return new ValueTask<string>(output ?? httpResponse.NullResponse());

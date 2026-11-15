@@ -163,7 +163,9 @@ namespace pitTeam.Utils
         {
             var medicine = bot?.Medecine;
             if (medicine == null || bot.GetPlayer?.HandsController is Player.MedsController ||
-                medicine.FirstAid?.Using == true || medicine.SurgicalKit?.Using == true || medicine.Stimulators?.Using == true) return;
+                medicine.FirstAid?.Using == true || medicine.SurgicalKit?.Using == true || medicine.Stimulators?.Using == true ||
+                FollowerMedicalOwnership.IsSettling(medicine.FirstAid) ||
+                FollowerMedicalOwnership.IsSettling(medicine.SurgicalKit)) return;
             // Native CancelCurrent hides Using through _lastIsCanceled without clearing
             // _using or the aggregate AidCallback flag if the old hands callback is lost.
             // Only reconcile after medicine no longer owns the actual hands or a start.
@@ -389,7 +391,7 @@ namespace pitTeam.Utils
                     return false;
                 }
 
-                if (IsUsingMedical(bot))
+                if (IsUsingMedical(bot) || HasTreatableSurgery(bot))
                 {
                     return false;
                 }
@@ -448,6 +450,7 @@ namespace pitTeam.Utils
 
         public static void UpdateMedicalHandsWatchdog(BotOwner bot)
         {
+            if (bot != null) FollowerMedicalOwnership.Reconcile(bot);
             ReconcileCancelledMedicalOwnership(bot);
             FollowerFirstAidRetry.Observe(bot);
             if (bot?.ProfileId == null || bot.GetPlayer == null || bot.HealthController?.IsAlive != true)
@@ -599,20 +602,36 @@ namespace pitTeam.Utils
                 return;
             }
 
-            // Native first aid can stop bleeding on a blacked part. Restoring it to
-            // 1 HP before that cure lets the next bleed tick black it again, repeatedly
-            // applying the surgery penalty and invalidating an HP treatment in flight.
+            // Keep a destroyed part available for real surgery whenever the bot has a usable kit.
+            // The emergency restore is for followers without one.
+            bool hasSurgeryKit = HasUsableSurgeryKit(player);
             for (int i = 0; i < SurgeryRecoveryParts.Length; i++)
             {
                 EBodyPart part = SurgeryRecoveryParts[i];
                 ClampImpossibleBodyPartHealth(player, part);
 
-                if (player.ActiveHealthController.IsBodyPartDestroyed(part))
+                if (!hasSurgeryKit && player.ActiveHealthController.IsBodyPartDestroyed(part))
                 {
                     player.ActiveHealthController.RestoreBodyPart(part, EmergencySurgeryHealthPenalty);
                     ClampImpossibleBodyPartHealth(player, part);
                 }
             }
+        }
+
+        private static bool HasUsableSurgeryKit(Player player)
+        {
+            var owner = player?.AIData?.BotOwner;
+            var surgery = owner?.Medecine?.SurgicalKit;
+            return surgery?.Using == true ||
+                   (owner?.Settings?.FileSettings?.Mind?.CAN_USE_MEDS == true &&
+                    CanTreatDamageEffect(surgery?.CurUsingMeds, EDamageEffectType.DestroyedPart));
+        }
+
+        internal static bool HasTreatableSurgery(BotOwner bot)
+        {
+            var player = bot?.GetPlayer;
+            return player?.ActiveHealthController is { } health && HasUsableSurgeryKit(player) &&
+                   Array.Exists(SurgeryRecoveryParts, health.IsBodyPartDestroyed);
         }
 
         private static void ClampImpossibleBodyPartHealth(Player player, EBodyPart part)
@@ -1271,13 +1290,13 @@ namespace pitTeam.Utils
                     return;
                 }
 
+                bot.Medecine.RefreshCurMeds();
                 NormalizeSurgeryRecoveredPartsForFirstAid(bot.GetPlayer);
                 if (bot.AIData?.Player != null && bot.AIData.Player != bot.GetPlayer)
                 {
                     NormalizeSurgeryRecoveredPartsForFirstAid(bot.AIData.Player);
                 }
 
-                bot.Medecine.RefreshCurMeds();
                 SelectUsableBleedFirstAid(bot);
                 bot.Medecine.GetDamaged();
                 bot.Medecine.SurgicalKit.FindDamagedPart();

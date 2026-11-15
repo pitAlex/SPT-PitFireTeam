@@ -66,6 +66,10 @@ namespace pitTeam.Patches
         protected override MethodBase GetTargetMethod() => AccessTools.Method(typeof(BotStimulators), nameof(BotStimulators.TryApply));
 
         [PatchPrefix]
-        private static void Prefix(BotStimulators __instance) => FollowerStimulatorSelectionPatch.FilterAntidotes(__instance);
+        private static bool Prefix(BotStimulators __instance)
+        {
+            FollowerStimulatorSelectionPatch.FilterAntidotes(__instance);
+            return true;
+        }
     }
 }

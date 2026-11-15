@@ -95,16 +95,17 @@ namespace pitTeam.Patches
             AccessTools.Method(typeof(BotFirstAid), nameof(BotFirstAid.ApplyToSelf));
 
         [PatchPrefix]
-        private static void PatchPrefix(BotFirstAid __instance)
+        private static bool PatchPrefix(BotFirstAid __instance)
         {
-            if (!BossPlayers.IsFollower(__instance._owner)) return;
+            if (!BossPlayers.IsFollower(__instance._owner)) return true;
             try { Utils.FollowerFirstAidRetry.Begin(__instance); }
             catch (Exception ex)
             {
-                if (reported) return;
+                if (reported) return true;
                 reported = true;
                 Logger.LogError($"[Medical] Could not observe first-aid start: {ex}");
             }
+            return true;
         }
     }
 

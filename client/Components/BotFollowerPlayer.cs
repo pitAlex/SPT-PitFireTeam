@@ -61,6 +61,7 @@ namespace pitTeam.Components
     {
         protected BotOwner _bot;
         private readonly FollowerPostCombatDiagnostics postCombatDiagnostics = new FollowerPostCombatDiagnostics();
+        private Utils.FollowerBloodLossRecovery? bloodLossRecovery;
         protected pitAIBossPlayer _player;
 
         protected BotSettingsInGameModif settingModif;
@@ -558,6 +559,9 @@ namespace pitTeam.Components
             if (_bot.BotLight != null && _bot.BotLight.IsEnable) _bot.BotLight.TurnOff(false, true);
             // make bot follower of player
             _player.AddFollower(_bot);
+            bloodLossRecovery?.Dispose();
+            if (_bot.GetPlayer.ActiveHealthController is { } health)
+                bloodLossRecovery = new Utils.FollowerBloodLossRecovery(health);
 
             // On conversion, immediately face the player to avoid initial upward stare until next steering update.
             if (_player?.realPlayer != null)
@@ -1253,6 +1257,8 @@ namespace pitTeam.Components
             }
             finally
             {
+                bloodLossRecovery?.Dispose();
+                bloodLossRecovery = null;
                 FollowerQuestingBots.Release(_bot);
                 FollowerSainProficiency.RestoreFollower(_bot);
 

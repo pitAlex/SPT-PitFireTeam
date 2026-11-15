@@ -148,7 +148,10 @@ namespace EFT {
 }
 namespace pitTeam.Utils {
 public static class FollowerFirstAidRetry { public static void Begin(BotFirstAid aid){} public static void ValidateSelection(BotFirstAid aid){} }
-public static class FollowerMedical {
+    public static class FollowerMedicalOwnership {
+        public static bool IsSettling(BotAbstractMedsToPart medicine) => false;
+    }
+    public static class FollowerMedical {
     public static void RefreshMedicalWork(BotOwner bot){bot.Medecine.Refreshes++;bot.Medecine.FirstAid.FindDamagedPart();}
     __SELECTION__
 }}

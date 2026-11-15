@@ -63,6 +63,21 @@ class BotWeaponSelector
     public BotOwner _owner;
     public bool TryChangeToSlot() => true;
 }
+class BotFirstAid
+{
+    public BotOwner _owner;
+    public void ApplyToSelf() { }
+}
+class BotSurgicalKit
+{
+    public BotOwner _owner;
+    public void ApplyToCurrentPart() { }
+}
+class BotStimulators
+{
+    public BotOwner _owner;
+    public void TryApply() { }
+}
 namespace UnityEngine
 {
     struct Vector2 { public float X; public static Vector2 zero => default; }
@@ -137,12 +152,24 @@ static class GearSwapApplyProtectionFixture
             "bleeding/metabolic health drain matches exact protection");
         Check((bool)Call<GearSwapApplyHealthDrainPatch>(player.ActiveHealthController, 1f), "positive health changes always allowed");
     }
+    static void MedicineGates(BotOwner owner, bool protectedActor)
+    {
+        Check((bool)Call<GearSwapApplyFirstAidPatch>(new BotFirstAid { _owner = owner }) == !protectedActor, "first aid matches exact Apply protection");
+        Check((bool)Call<GearSwapApplySurgeryPatch>(new BotSurgicalKit { _owner = owner }) == !protectedActor, "surgery matches exact Apply protection");
+        bool? result = null;
+        Action<bool> completed = success => result = success;
+        Check((bool)Call<GearSwapApplyStimulatorPatch>(new BotStimulators { _owner = owner }, completed) == !protectedActor, "stimulators match exact Apply protection");
+        Check(result == (protectedActor ? (bool?)false : null), "blocked stim reports native failed-start result");
+    }
     static void Main()
     {
         var session = Session();
         DamageGates(session.Bot.GetPlayer, false);
         Check(!TeammateGearSwap.Protects(session.Bot.GetPlayer), "draft has no protection");
+        MedicineGates(session.Bot, false);
         session.Begin();
+        MedicineGates(session.Bot, true);
+        MedicineGates(new BotOwner(), false);
         DamageGates(session.Bot.GetPlayer, true);
         DamageGates(session.Owner.Player, false);
         DamageGates(new Player(), false);
@@ -167,6 +194,7 @@ static class GearSwapApplyProtectionFixture
         Call<GearSwapRaidStopPatch>();
         Check(session._closed && session._worldEnding && TeammateGearSwap.Current == null, "raid stop closes and detaches session before snapshots");
         Check(!session.Bot.Mover.Pause && !session._applyScope.Active, "raid stop releases movement and protection");
+        MedicineGates(session.Bot, false);
         Check(session._applyScope.Committed, "raid stop never undoes committed ownership");
         Check(!session.Continues(session.Bot.GetPlayer), "late continuations rejected after teardown");
         Check((bool)Call<GearSwapApplyBrainTickPatch>(session.Bot.Brain.Agent), "brain resumes after protection release");

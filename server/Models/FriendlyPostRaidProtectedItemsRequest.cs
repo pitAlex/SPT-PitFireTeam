@@ -11,6 +11,12 @@ public record FriendlyPostRaidProtectedItemsRequest : IRequestData
     [JsonPropertyName("removeItemIds")]
     public List<string>? RemoveItemIds { get; set; }
 
+    [JsonPropertyName("droppingCompanionProfileId")]
+    public string? DroppingCompanionProfileId { get; set; }
+
+    [JsonPropertyName("droppedCompanionItemIds")]
+    public List<string>? DroppedCompanionItemIds { get; set; }
+
     [JsonPropertyName("context")]
     public string? Context { get; set; }
 }
