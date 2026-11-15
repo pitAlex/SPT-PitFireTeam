@@ -53,16 +53,16 @@ namespace pitTeam.Patches
 
         public static BotsController Controller = null;
 
-        public static List<pitAIBossPlayer> spawnedPlayers = new List<pitAIBossPlayer>();
+        internal static pitAIBossPlayer LocalRaidLeader { get; set; }
 
-        public static Dictionary<string, Task<Dictionary<string, Profile>>> followerCreationTask;
+        private static readonly Dictionary<string, (string[] Accounts, Task<Dictionary<string, Profile>> Profiles)> FollowerCreationTasks =
+            new Dictionary<string, (string[], Task<Dictionary<string, Profile>>)>(StringComparer.Ordinal);
         public static Dictionary<string, Task<BotCreationData>> alliesCreationTask;
         public static Dictionary<WildSpawnType, Task<BotCreationData>> bossCreationTask;
 
         public BotsControllerPatch()
         {
             if (Instance == null) Instance = this;
-            followerCreationTask = new Dictionary<string, Task<Dictionary<string, Profile>>>();
             alliesCreationTask = new Dictionary<string, Task<BotCreationData>>();
             bossCreationTask = new Dictionary<WildSpawnType, Task<BotCreationData>>();
         }
@@ -474,7 +474,7 @@ namespace pitTeam.Patches
         /** 
          * Task for creating Follower Profiles along with applying custom equipment (if specified) to them 
          * **/
-        private async Task<Dictionary<string, Profile>> CreateProfilesJob(pitAIBossPlayer player)
+        private async Task<Dictionary<string, Profile>> CreateProfilesJob(pitAIBossPlayer player, IReadOnlyList<string> selectedAccounts)
         {
             ConcurrentDictionary<string, Profile> profiles = new ConcurrentDictionary<string, Profile>();
 
@@ -482,7 +482,6 @@ namespace pitTeam.Patches
             var botCreator = botSpawnerClass._botCreator as BotCreator;
 
             EPlayerSide side = player.realPlayer.Side;
-            Vector3 position = player.Position;
 
             WildSpawnType sptBear = WildSpawnType.pmcBEAR;
             WildSpawnType sptUsec = WildSpawnType.pmcUSEC;
@@ -497,34 +496,26 @@ namespace pitTeam.Patches
                 type = sptUsec;
             }
 
-            int memberCount = SpawnHelper.spawnMemberIds.Count;
-
             BotSpawnParams @params = new BotSpawnParams();
-            @params.ShallBeGroup = new ShallBeGroupParams(true, false, memberCount + 1);
+            @params.ShallBeGroup = new ShallBeGroupParams(true, false, selectedAccounts.Count + 1);
 
             Profile playerProfile = player.realPlayer.Profile;
 
             List<Task> profileTasks = new List<Task>();
 
-            if (SpawnHelper.spawnMemberIds.Count > 0)
+            foreach (string id in selectedAccounts)
             {
-                foreach (var aid in SpawnHelper.spawnMemberIds)
+                profileTasks.Add(FetchMemberProfile(id, playerProfile, botCreator, side, type, @params).ContinueWith(task =>
                 {
-                    string id = aid.ToString();
-                    profileTasks.Add(FetchMemberProfile(id, playerProfile, botCreator, side, type, @params).ContinueWith(dt =>
+                    if (task.Status == TaskStatus.RanToCompletion && task.Result != null)
                     {
-                        if (dt == null) return;
-
-                        if (dt.Status == TaskStatus.RanToCompletion && dt.Result != null)
-                        {
-                            profiles.TryAdd(id, dt.Result);
-                        }
-                        else
-                        {
-                            Modules.Logger.LogError($"Failed to fetch profile for AID: {id}. Task status: {dt.Status}, Exception: {dt.Exception?.ToString()}");
-                        }
-                    }));
-                }
+                        profiles.TryAdd(id, task.Result);
+                    }
+                    else
+                    {
+                        Modules.Logger.LogError($"Failed to fetch profile for AID: {id}. Task status: {task.Status}, Exception: {task.Exception}");
+                    }
+                }));
             }
 
             await Task.WhenAll(profileTasks);
@@ -543,19 +534,21 @@ namespace pitTeam.Patches
 
         }
         /** Promise of Follower Profiles that will be cached for faster use **/
-        public Task<Dictionary<string, Profile>> CreateFollowerProfiles(pitAIBossPlayer player)
+        private Task<Dictionary<string, Profile>> CreateFollowerProfiles(pitAIBossPlayer player, string[] selectedAccounts)
         {
-            if (Controller == null) return null;
-            if (followerCreationTask.ContainsKey(player.realPlayer.ProfileId))
+            string leaderId = player.realPlayer.ProfileId;
+            if (FollowerCreationTasks.TryGetValue(leaderId, out var cached) &&
+                cached.Accounts.SequenceEqual(selectedAccounts, StringComparer.Ordinal))
             {
-                return followerCreationTask[player.realPlayer.ProfileId];
+                return cached.Profiles;
             }
 
-            followerCreationTask[player.realPlayer.ProfileId] = CreateProfilesJob(player);
-
-
-            return followerCreationTask[player.realPlayer.ProfileId];
+            var profiles = CreateProfilesJob(player, selectedAccounts);
+            FollowerCreationTasks[leaderId] = (selectedAccounts, profiles);
+            return profiles;
         }
+
+        internal static void ClearPrefetchedFollowerProfiles() => FollowerCreationTasks.Clear();
 
         public Task<BotCreationData> PreFetchBossProfiles(pitAIBossPlayer player, WildSpawnType? type = null)
         {
@@ -668,11 +661,6 @@ namespace pitTeam.Patches
                 PreFetchScavProfiles(player);
                 return alliesCreationTask[player.realPlayer.ProfileId];
             }
-        }
-
-        private static bool HasFika()
-        {
-            return Type.GetType("Fika.Core.Coop.GameMode.CoopGame, Fika.Core") != null;
         }
 
         public async Task SpawnBossFollower(pitAIBossPlayer player, WildSpawnType boss = WildSpawnType.bossKnight, CancelToken cancelToken = null)
@@ -930,19 +918,21 @@ namespace pitTeam.Patches
                 ? savedSide.Value : leaderSide;
         }
 
-        public async Task SpawnGroupBots(pitAIBossPlayer player)
+        internal async Task SpawnGroupBots(pitAIBossPlayer player, IReadOnlyList<string> selectedMemberIds)
         {
-
             var raidController = Controller;
-            var selectedAccounts = SpawnHelper.spawnMemberIds.ToArray();
+            var botSpawnerClass = raidController?.BotSpawner;
+            if (botSpawnerClass == null || player == null || !ReferenceEquals(BossPlayers.GetBoss(player.realPlayer.ProfileId), player)) return;
+
+            var selectedAccounts = selectedMemberIds.ToArray();
             bool RaidValid() => ReferenceEquals(Controller, raidController) &&
                 ReferenceEquals(BossPlayers.GetBoss(player.realPlayer.ProfileId), player);
             CancelToken token = new CancelToken();
 
-            BotSpawner botSpawnerClass = Controller.BotSpawner;
             BotCreator botCreator = botSpawnerClass._botCreator as BotCreator;
 
             EPlayerSide side = player.Player().Side;
+            if (side != EPlayerSide.Savage && selectedAccounts.Length == 0) return;
             Vector3 position = player.Position;
             BotZone zone = botSpawnerClass.GetClosestZone(position, out var dist);
 
@@ -1002,10 +992,12 @@ namespace pitTeam.Patches
 
                 IProfileData data = new IProfileData(side, type, BotDifficulty.hard, side == EPlayerSide.Savage ? 5f : 0f, @params);
                 Dictionary<string, Profile> botsProfile;
+                Task<Dictionary<string, Profile>> profileTask;
 
                 try
                 {
-                    botsProfile = await CreateFollowerProfiles(player);
+                    profileTask = CreateFollowerProfiles(player, selectedAccounts);
+                    botsProfile = await profileTask;
                 }
                 catch (Exception ex)
                 {
@@ -1033,7 +1025,11 @@ namespace pitTeam.Patches
                 botsData = await BotCreationData.Create(data, botCreator, 0, botSpawnerClass);
 
                 if (!RaidValid()) return;
-                followerCreationTask.Remove(player.realPlayer.ProfileId);
+                if (FollowerCreationTasks.TryGetValue(player.realPlayer.ProfileId, out var cached) &&
+                    ReferenceEquals(cached.Profiles, profileTask))
+                {
+                    FollowerCreationTasks.Remove(player.realPlayer.ProfileId);
+                }
 
                 foreach (var aid in selectedAccounts)
                 {
@@ -1603,10 +1599,11 @@ namespace pitTeam.Patches
 
                 pitAIBossPlayer playerBoss = BossPlayers.AddPlayerAsBoss(player, __instance);
 
-                spawnedPlayers.Add(playerBoss);
+                if (!ReferenceEquals(Controller, __instance) || !player.IsYourPlayer || playerBoss == null) return;
+                LocalRaidLeader = playerBoss;
 
-                // prefetch follower profile data
-                if (!HasFika() && pitFireTeam.botPrefetch.Value)
+                // Other raid hosts can use their initialized bot creator at spawn time.
+                if (__instance.BotGame is LocalGame && pitFireTeam.botPrefetch.Value)
                 {
                     if (playerBoss.Player().Side != EPlayerSide.Savage)
                     {
@@ -1616,7 +1613,7 @@ namespace pitTeam.Patches
                         }
                         else if (Utils.SpawnHelper.spawnMemberIds.Count > 0)
                         {
-                            Instance?.CreateFollowerProfiles(playerBoss);
+                            Instance?.CreateFollowerProfiles(playerBoss, SpawnHelper.spawnMemberIds.ToArray());
                         }
                     }
                     else if (playerBoss.Player().Side == EPlayerSide.Savage && SpawnHelper.ScavSquad)
@@ -1734,104 +1731,68 @@ namespace pitTeam.Patches
         [PatchPostfix]
         private static void PatchPostfix(BotsEventsController __instance)
         {
-            FollowerInsuranceRaidReports.Begin(LocalGameCtorPatch.Instance);
-            Utils.Utils.FlagSet("RaidTransit", false);
+            var controller = BotsControllerPatch.Controller;
+            if (controller == null || !ReferenceEquals(controller.EventsController, __instance)) return;
+
+            // Fika's human host has a locally owned player and bot controller,
+            // with raid settings on its BaseLocalGame-derived game instance.
+            AbstractGame game = LocalGameCtorPatch.Instance;
+            if (game == null)
+            {
+                if (BotsControllerPatch.LocalRaidLeader == null || !Singleton<AbstractGame>.Instantiated) return;
+                game = Singleton<AbstractGame>.Instance;
+            }
+
             try
             {
-                SpawnFollowers();
+                var settings = AccessTools.Field(game.GetType(), "_raidSettings")?.GetValue(game) as LocalRaidSettings;
+                FollowerInsuranceRaidReports.Begin(settings?.serverId);
             }
             catch (Exception e)
             {
-                Modules.Logger.LogError(e);
+                Modules.Logger.LogError($"[FollowerInsurance:ReportStart] {e}");
             }
+            Utils.Utils.FlagSet("RaidTransit", false);
+            SpawnFollowers().HandleExceptions();
         }
 
         public static bool squadSpawned = false;
 
-        public static void SpawnFollowers()
+        private static async Task SpawnFollowers()
         {
-
-            if (squadSpawned || BotsControllerPatch.Controller == null) return;
-
+            var controller = BotsControllerPatch.Controller;
+            var leader = BotsControllerPatch.LocalRaidLeader;
+            if (squadSpawned || controller == null || leader == null) return;
             squadSpawned = true;
-
-            List<Task> squadSpawners = new List<Task>();
-
-            List<string> scavPlayers = new List<string>();
-            BotsControllerPatch.spawnedPlayers.ForEach(playerBoss =>
-            {
-                if (playerBoss.realPlayer.Side == EPlayerSide.Savage && SpawnHelper.ScavSquad)
-                {
-                    Task scavSpanner = BotsControllerPatch.Instance.SpawnGroupBots(playerBoss);
-                    squadSpawners.Add(scavSpanner);
-                    scavPlayers.Add(playerBoss.realPlayer.ProfileId);
-                    return;
-                }
-            });
 
             if (GameplayModeAddons.HasSelectedBossCompanions)
             {
-                var spawner = BotsControllerPatch.Controller.BotSpawner;
+                var spawner = controller.BotSpawner;
                 var blocked = spawner._blockedRoles.Select(role => role.ToString());
                 spawner.SetBlockedRoles(blocked.Concat(new[] { "bossKnight", "followerBirdEye", "followerBigPipe" }).Distinct().ToArray());
             }
 
-            if (SpawnHelper.spawnMemberIds.Count > 0)
+            var spawns = BotsControllerPatch.Instance;
+            if (leader.realPlayer.Side == EPlayerSide.Savage && SpawnHelper.ScavSquad)
+            {
+                await spawns.SpawnGroupBots(leader, Array.Empty<string>());
+                return;
+            }
+
+            string[] selectedAccounts = SpawnHelper.spawnMemberIds.ToArray();
+            if (selectedAccounts.Length > 0)
             {
                 Modules.Logger.LogInfo("Start Squad Spawn");
-
-                BotsControllerPatch.spawnedPlayers.ForEach(playerBoss =>
-                {
-                    if (scavPlayers.Contains(playerBoss.realPlayer.ProfileId)) return;
-                    Task squadSpanner = BotsControllerPatch.Instance.SpawnGroupBots(playerBoss);
-                    squadSpawners.Add(squadSpanner);
-                });
-
-                Task.WhenAll(squadSpawners).ContinueWith(t =>
-                {
-                    BotsControllerPatch.alliesCreationTask.Clear();
-                }, TaskScheduler.FromCurrentSynchronizationContext()).HandleExceptions();
-
+                await spawns.SpawnGroupBots(leader, selectedAccounts);
             }
             else if (SpawnHelper.spawnMemberIdsBoss.Count > 0)
             {
                 Modules.Logger.LogInfo("Start Boss Ally Spawn");
-
-                BotsControllerPatch.alliesCreationTask.Clear();
-
-                List<Task> bossSpawners = new List<Task>();
-
-                BotsControllerPatch.spawnedPlayers.ForEach(playerBoss =>
-                {
-                    if (scavPlayers.Contains(playerBoss.realPlayer.ProfileId)) return;
-
-                    try
-                    {
-                        WildSpawnType type = WildSpawnType.bossKnight;
-                        if (!SpawnHelper.spawnMemberIdsBoss.Contains(WildSpawnType.bossKnight))
-                        {
-                            if (SpawnHelper.spawnMemberIdsBoss.Contains(WildSpawnType.followerBigPipe))
-                            {
-                                type = WildSpawnType.followerBigPipe;
-                            }
-                            else if (SpawnHelper.spawnMemberIdsBoss.Contains(WildSpawnType.followerBirdEye))
-                            {
-                                type = WildSpawnType.followerBirdEye;
-                            }
-                        }
-                        bossSpawners.Add(BotsControllerPatch.Instance.SpawnBossFollower(playerBoss, type));
-                    }
-                    catch (Exception e)
-                    {
-                        Modules.Logger.LogError("Failed to spawn Boss Ally");
-                        Modules.Logger.LogError(e);
-                    }
-                });
-
-                Task.WhenAll(bossSpawners).ContinueWith(t =>
-                {
-                    BotsControllerPatch.bossCreationTask.Clear();
-                }, TaskScheduler.FromCurrentSynchronizationContext()).HandleExceptions();
+                var role = SpawnHelper.spawnMemberIdsBoss.Contains(WildSpawnType.bossKnight) ? WildSpawnType.bossKnight
+                    : SpawnHelper.spawnMemberIdsBoss.Contains(WildSpawnType.followerBigPipe) ? WildSpawnType.followerBigPipe
+                    : WildSpawnType.followerBirdEye;
+                await spawns.SpawnBossFollower(leader, role);
+                if (ReferenceEquals(BotsControllerPatch.Controller, controller)) BotsControllerPatch.bossCreationTask.Clear();
             }
         }
 
@@ -1868,8 +1829,8 @@ namespace pitTeam.Patches
             FollowerInsuranceRaidReports.Complete();
             FollowerInsuranceRaidDisplay.Clear();
 
-            BotsControllerPatch.spawnedPlayers.Clear();
-            BotsControllerPatch.followerCreationTask.Clear();
+            BotsControllerPatch.LocalRaidLeader = null;
+            BotsControllerPatch.ClearPrefetchedFollowerProfiles();
             CompanionRaidPreparation.Reset();
             BotsControllerPatch.alliesCreationTask.Clear();
             BotsControllerPatch.bossCreationTask.Clear();

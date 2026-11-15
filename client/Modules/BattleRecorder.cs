@@ -2608,6 +2608,9 @@ namespace pitTeam.Modules
 
         private sealed class RecorderFollowerState
         {
+            public float NextPeacefulFollowSample;
+            public float NextPeacefulFollowCorrection;
+            public PeacefulFollowMotionSample PeacefulFollowMotion;
             public float NextPatrolWaitProbe;
             public float NextPatrolWaitRecord;
             public float PatrolWaitStarted;

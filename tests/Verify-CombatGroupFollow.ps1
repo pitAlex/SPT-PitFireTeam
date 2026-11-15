@@ -3,6 +3,8 @@ $ErrorActionPreference='Stop'
 $source=Get-Content -Raw (Join-Path $RepositoryRoot 'client/BigBrain/FollowerCombatCommon.cs')
 $method=[regex]::Match($source,'(?ms)^        internal bool TryPlanCombatFollowDecision\(.*?^        \}').Value
 if(!$method){throw 'Missing Core group-follow planner'}
+$followPoint=[regex]::Match($source,'(?ms)^        private bool TrySampleCombatFollowPoint\(.*?^        \}').Value
+if(!$followPoint){throw 'Missing Core group-follow point validation'}
 $advance=[regex]::Match($source,'(?ms)^        internal bool TryPlanContactAdvanceDecision\(.*?^        \}').Value
 if(!$advance){throw 'Missing Core contact-advance planner'}
 $ground=[regex]::Match($source,'(?ms)^        internal static bool HasSupportedCombatGround\(.*?^        \}').Value
@@ -13,6 +15,7 @@ $production=@"
 using UnityEngine; using UnityEngine.AI;
 partial class Planner {
 $method
+$followPoint
 $advance
 $ground
 }

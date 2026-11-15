@@ -276,6 +276,10 @@ namespace pitTeam.BigBrain
         public override void Start()
         {
             base.Start();
+            // Regroup can reset the active-layer pointer without invoking Stop. Require a
+            // fresh patrol action so BigBrain cannot carry the request action into patrol.
+            CurrentAction = null;
+            selectedAction = null;
             isHealing = false;
             stoppedForHealDecision = false;
             patrolHealStartAnnounced = false;
@@ -988,7 +992,8 @@ namespace pitTeam.BigBrain
                 return false;
             }
 
-            if (Utils.FollowerMedical.IsPostCombatFullHealActive(BotOwner))
+            if (Utils.FollowerMedical.IsPostCombatFullHealActive(BotOwner) &&
+                !Utils.FollowerMedical.HasTreatableSurgery(BotOwner))
             {
                 Utils.FollowerMedical.ForceHeal(BotOwner);
                 Utils.FollowerMedical.CompletePostCombatFullHeal(BotOwner);

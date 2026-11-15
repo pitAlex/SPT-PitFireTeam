@@ -9197,18 +9197,55 @@ namespace pitTeam.BigBrain
             offset.y = 0f;
             if (offset.sqrMagnitude < 0.01f) offset = Vector3.right;
             Vector3 desired = leaderPosition + offset.normalized * 3f;
-            Vector3 candidate = Vector3.MoveTowards(botOwner.Position, desired, 20f);
+            Vector3 start = botOwner.Position;
+            Vector3 travel = Vector3.MoveTowards(start, desired, 20f) - start;
+            if (!TrySampleCombatFollowPoint(start + travel, start, leaderPosition, anchor, out point, out string directRejection))
+            {
+                Vector3 sideways = new Vector3(-travel.z, 0f, travel.x).normalized * Mathf.Min(3f, travel.magnitude * 0.35f);
+                Vector3 shorter = start + travel * 0.75f;
+                if (!TrySampleCombatFollowPoint(shorter, start, leaderPosition, anchor, out point, out _) &&
+                    !TrySampleCombatFollowPoint(shorter + sideways, start, leaderPosition, anchor, out point, out _) &&
+                    !TrySampleCombatFollowPoint(shorter - sideways, start, leaderPosition, anchor, out point, out _) &&
+                    !TrySampleCombatFollowPoint(start + travel * 0.5f, start, leaderPosition, anchor, out point, out _))
+                {
+                    BattleRecorder.RecordObjectiveDiagnostic(botOwner, "combatFollow", "blocked", directRejection,
+                        () => new
+                        {
+                            followReason = reason,
+                            start = new { start.x, start.y, start.z },
+                            leaderPosition = new { leaderPosition.x, leaderPosition.y, leaderPosition.z },
+                            directCandidate = new { x = start.x + travel.x, y = start.y + travel.y, z = start.z + travel.z }
+                        });
+                    return false;
+                }
+            }
+
+            decision = new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(BotLogicDecision.goToPoint, reason);
+            return true;
+        }
+
+        private bool TrySampleCombatFollowPoint(Vector3 candidate, Vector3 start, Vector3 leaderPosition, Vector3 anchor,
+            out Vector3 point, out string rejection)
+        {
+            point = default;
+            rejection = "navMeshSample";
             if (!NavMesh.SamplePosition(candidate, out NavMeshHit hit, 1.5f, NavMesh.AllAreas) ||
-                Mathf.Abs(hit.position.y - candidate.y) > 1.25f ||
-                (hit.position - botOwner.Position).sqrMagnitude < 4f ||
-                (hit.position - botOwner.Position).sqrMagnitude > 400f ||
-                Vector3.Distance(hit.position, leaderPosition) < 2f || !HasSupportedCombatGround(hit.position) ||
-                IsBossFireLaneMovementRisk(hit.position, anchor, includePath: true)) return false;
+                !IsFinite(hit.position) || Mathf.Abs(hit.position.y - candidate.y) > 1.25f) return false;
+            rejection = "stepBounds";
+            float stepDistanceSqr = (hit.position - start).sqrMagnitude;
+            float leaderDistanceSqr = (hit.position - leaderPosition).sqrMagnitude;
+            if (stepDistanceSqr < 4f || stepDistanceSqr > 400f || leaderDistanceSqr < 4f ||
+                leaderDistanceSqr >= (start - leaderPosition).sqrMagnitude) return false;
+            rejection = "unsupportedGround";
+            if (!HasSupportedCombatGround(hit.position)) return false;
+            rejection = "fireLane";
+            if (IsBossFireLaneMovementRisk(hit.position, anchor, includePath: true)) return false;
+            rejection = "incompletePath";
             var path = new NavMeshPath();
-            if (!NavMesh.CalculatePath(botOwner.Position, hit.position, NavMesh.AllAreas, path) ||
+            if (!NavMesh.CalculatePath(start, hit.position, NavMesh.AllAreas, path) ||
                 path.status != NavMeshPathStatus.PathComplete) return false;
             point = hit.position;
-            decision = new AICoreActionResult<BotLogicDecision, CoreActionResultParams>(BotLogicDecision.goToPoint, reason);
+            rejection = string.Empty;
             return true;
         }
 

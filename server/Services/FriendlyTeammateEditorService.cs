@@ -1,7 +1,9 @@
 using System.Text.Json.Nodes;
 using pitTeam.Server.Models;
 using SPTarkov.DI.Annotations;
+using SPTarkov.Server.Core.Controllers;
 using SPTarkov.Server.Core.Models.Common;
+using SPTarkov.Server.Core.Models.Eft.Common.Tables;
 using SPTarkov.Server.Core.Models.Spt.Tables;
 using SPTarkov.Server.Core.Helpers.Profile;
 using SPTarkov.Server.Core.Servers;
@@ -10,7 +12,8 @@ using SPTarkov.Server.Core.Services.Locales;
 namespace pitTeam.Server.Services;
 
 [Injectable(InjectionType.Singleton)]
-public class FriendlyTeammateEditorService(FriendlyTeammateStorage storage, SaveServer saves, TemplateTable templates, ProfileHelper profiles, LocaleService locales)
+public class FriendlyTeammateEditorService(FriendlyTeammateStorage storage, SaveServer saves, TemplateTable templates,
+    ProfileHelper profiles, LocaleService locales, CustomizationController customization)
 {
     public IReadOnlyList<TeammateEditorChoice> Players() => saves.GetProfiles().Select(p => new TeammateEditorChoice(
         p.Key.ToString(), (p.Value.CharacterData?.PmcData?.Info?.Nickname ?? p.Key.ToString()) + " · " + p.Key)).ToList();
@@ -18,17 +21,53 @@ public class FriendlyTeammateEditorService(FriendlyTeammateStorage storage, Save
     public IReadOnlyList<TeammateEditorChoice> Modes() => pitTeam.Shared.GameplayModePolicy.Modes
         .Where(FriendlyGameplayModeAddons.IsAvailable).Select(m => new TeammateEditorChoice(m, m)).ToList();
 
-    public IReadOnlyList<TeammateEditorChoice> Heads(string locale = "en") => CustomizationChoices(false, locale);
+    private IEnumerable<CustomizationItem> HeadTemplates => templates.Customization.Values.Where(t => t.Properties?.BodyPart == "Head");
 
-    public IReadOnlyList<TeammateEditorChoice> Voices(string locale = "en") => CustomizationChoices(true, locale);
+    private IEnumerable<CustomizationItem> VoiceTemplates => templates.Customization.Values.Where(FriendlyTeammateIdentityPolicy.IsVoice);
 
-    private IReadOnlyList<TeammateEditorChoice> CustomizationChoices(bool voices, string locale)
+    public IReadOnlyList<TeammateEditorChoice> Heads(string locale = "en") =>
+        CustomizationChoices(HeadTemplates, t => t.Id.ToString(), locale);
+
+    public IReadOnlyList<TeammateEditorChoice> Voices(string locale = "en") =>
+        CustomizationChoices(VoiceTemplates, t => t.Id.ToString(), locale);
+
+    public (IReadOnlyList<TeammateEditorChoice> Upper, IReadOnlyList<TeammateEditorChoice> Lower) Clothing(
+        string player, string savedBodyId, string savedFeetId, string locale = "en")
+    {
+        var owned = OwnedSuitIds(new MongoId(player));
+        return (CustomizationChoices(UpperSuits(owned, savedBodyId), t => t.Properties.Body!.Value.ToString(), locale),
+            CustomizationChoices(LowerSuits(owned, savedFeetId), t => t.Properties.Feet!.Value.ToString(), locale));
+    }
+
+    private HashSet<MongoId> OwnedSuitIds(MongoId session) => customization.GetCustomisationStorage(session)
+        .Where(entry => entry.Type == CustomisationType.SUITE).Select(entry => entry.Id).ToHashSet();
+
+    private static bool IsOwnedSuit(CustomizationItem suit, IReadOnlySet<MongoId> owned) => owned.Contains(suit.Id) &&
+        suit.Properties?.Side?.Any(side => side is "Bear" or "Usec" or "Savage") == true;
+
+    private IEnumerable<CustomizationItem> UpperSuits(IReadOnlySet<MongoId> owned, string? currentBody = null) => templates.Customization.Values
+        .Where(t => t.Parent == CustomisationTypeId.UPPER && IsBodyPart(t.Properties?.Body, "Body") && IsBodyPart(t.Properties?.Hands, "Hands"))
+        .Where(t => IsOwnedSuit(t, owned) || t.Properties.Body!.Value.ToString() == currentBody)
+        .OrderBy(t => t.Id.ToString(), StringComparer.Ordinal)
+        .DistinctBy(t => t.Properties.Body);
+
+    private IEnumerable<CustomizationItem> LowerSuits(IReadOnlySet<MongoId> owned, string? currentFeet = null) => templates.Customization.Values
+        .Where(t => t.Parent == CustomisationTypeId.LOWER && IsBodyPart(t.Properties?.Feet, "Feet"))
+        .Where(t => IsOwnedSuit(t, owned) || t.Properties.Feet!.Value.ToString() == currentFeet)
+        .OrderBy(t => t.Id.ToString(), StringComparer.Ordinal)
+        .DistinctBy(t => t.Properties.Feet);
+
+    private bool IsBodyPart(MongoId? id, string part) => id is MongoId value &&
+        templates.Customization.TryGetValue(value, out var item) && item.Properties?.BodyPart == part;
+
+    private IReadOnlyList<TeammateEditorChoice> CustomizationChoices(IEnumerable<CustomizationItem> options,
+        Func<CustomizationItem, string> selectionId, string locale)
     {
         // Our client locale is 'chs'; the installed EFT global database uses 'ch'.
         var selected = locales.GetLocaleDb(locale == "chs" ? "ch" : locale);
         var english = locale == "en" ? selected : locales.GetLocaleDb("en");
-        return templates.Customization.Values.Where(t => voices ? FriendlyTeammateIdentityPolicy.IsVoice(t) : t.Properties?.BodyPart == "Head")
-            .Select(t => new TeammateEditorChoice(t.Id.ToString(), FriendlyTeammateIdentityPolicy.DisplayName(t.Id.ToString(), t.Name, selected, english)))
+        return options
+            .Select(t => new TeammateEditorChoice(selectionId(t), FriendlyTeammateIdentityPolicy.DisplayName(t.Id.ToString(), t.Name, selected, english)))
             .OrderBy(t => t.Label, StringComparer.CurrentCultureIgnoreCase).ThenBy(t => t.Id, StringComparer.Ordinal).ToList();
     }
 
@@ -72,9 +111,12 @@ public class FriendlyTeammateEditorService(FriendlyTeammateStorage storage, Save
         var otherNames = storage.ReadModeProfiles(session, mode).Where(p => p.Key != aid + ".json")
             .Select(p => JsonNode.Parse(p.Value)?["Info"]?["Nickname"]?.GetValue<string>());
         if (FriendlyTeammateIdentityPolicy.NicknameInUse(otherNames, nickname)) throw new InvalidDataException("EditorNameTaken");
+        var owned = OwnedSuitIds(session);
         var changed = FriendlyTeammateEditorPolicy.Apply(profile, equipment, edit,
-            templates.Customization.Values.Where(t => t.Properties?.BodyPart == "Head").Select(t => t.Id.ToString()).ToHashSet(), Pockets(),
-            templates.Customization.Values.Where(FriendlyTeammateIdentityPolicy.IsVoice).Select(t => t.Id.ToString()).ToHashSet());
+            HeadTemplates.Select(t => t.Id.ToString()).ToHashSet(), Pockets(),
+            VoiceTemplates.Select(t => t.Id.ToString()).ToHashSet(),
+            UpperSuits(owned).ToDictionary(t => t.Properties.Body!.Value.ToString(), t => t.Properties.Hands!.Value.ToString()),
+            LowerSuits(owned).Select(t => t.Properties.Feet!.Value.ToString()).ToHashSet());
         var documents = new Dictionary<string, string> { [aid + ".json"] = changed.Profile };
         if (changed.Equipment != equipment && changed.Equipment != null) documents[aid + "-equipment.json"] = changed.Equipment;
         storage.WriteModeDocuments(session, mode, documents, backupPrevious: true);

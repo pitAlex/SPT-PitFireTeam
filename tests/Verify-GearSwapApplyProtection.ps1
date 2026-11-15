@@ -51,6 +51,7 @@ try {
         @('EFT.Player','ApplyExplosionDamageToArmor',2), @('EFT.HealthSystem.ActiveHealthController','ApplyDamage',3),
         @('EFT.HealthSystem.ActiveHealthController','ChangeHealth',3), @('EFT.HealthSystem.ActiveHealthController','Kill',1),
         @('EFT.Player','OnDead',1),
+        @('BotFirstAid','ApplyToSelf',2), @('BotSurgicalKit','ApplyToCurrentPart',1), @('BotStimulators','TryApply',3),
         @('EFT.LocalGame','Stop',4), @('EFT.BotsController','StopGettingInfo',0))) {
         $type = $module.Types | Where-Object FullName -eq $contract[0]
         $method = $type.Methods | Where-Object { $_.Name -eq $contract[1] -and $_.Parameters.Count -eq $contract[2] }

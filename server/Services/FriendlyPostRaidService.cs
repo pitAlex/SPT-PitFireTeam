@@ -16,6 +16,7 @@ using SPTarkov.Server.Core.Servers;
 using SPTarkov.Server.Core.Services.Commerce;
 using SPTarkov.Server.Core.Utils;
 using System.Collections.Concurrent;
+using System.Text.Json;
 
 namespace pitTeam.Server.Services;
 
@@ -39,12 +40,63 @@ public class FriendlyPostRaidService(
     private const string KillMessageKindJerk = "jerk";
     private static readonly ConcurrentDictionary<string, Dictionary<string, KillMessageRecord>> KillMessageRecords = new();
     private static readonly ConcurrentDictionary<string, HashSet<string>> ProtectedRaidItemIds = new();
+    private static readonly ConcurrentDictionary<string, CompanionRaidProtection> CompanionProtection = new();
+
+    private sealed class CompanionRaidProtection
+    {
+        internal readonly Dictionary<string, HashSet<string>> SpawnIdsByProfile = new(StringComparer.OrdinalIgnoreCase);
+        internal readonly HashSet<string> ReleasedIds = new(StringComparer.OrdinalIgnoreCase);
+    }
 
     internal static HashSet<string> SnapshotProtectedRaidItemIds(MongoId sessionId)
     {
-        if (!ProtectedRaidItemIds.TryGetValue(sessionId.ToString(), out var ids))
-            return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        lock (ids) return new HashSet<string>(ids, StringComparer.OrdinalIgnoreCase);
+        var snapshot = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (ProtectedRaidItemIds.TryGetValue(sessionId.ToString(), out var ids))
+        {
+            lock (ids) snapshot.UnionWith(ids);
+        }
+        AddCompanionRaidProtection(sessionId, snapshot);
+        return snapshot;
+    }
+
+    internal void RegisterCompanionSpawnProtection(MongoId sessionId, string profileId, HashSet<string> itemIds)
+    {
+        var raid = CompanionProtection.GetOrAdd(sessionId.ToString(), _ => new CompanionRaidProtection());
+        lock (raid)
+        {
+            if (!raid.SpawnIdsByProfile.TryGetValue(profileId, out var registered))
+            {
+                registered = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                raid.SpawnIdsByProfile[profileId] = registered;
+            }
+            registered.UnionWith(itemIds);
+        }
+    }
+
+    internal static void BeginCompanionRaid(MongoId sessionId, string? startResponse)
+    {
+        string key = sessionId.ToString();
+        if (!CompanionProtection.ContainsKey(key) || string.IsNullOrEmpty(startResponse)) return;
+
+        // The native response restores transit details from the previous map even if the request omitted them.
+        using var response = JsonDocument.Parse(startResponse);
+        if (response.RootElement.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Object &&
+            data.TryGetProperty("transition", out var transition) && transition.ValueKind == JsonValueKind.Object &&
+            transition.TryGetProperty("transitionCount", out var count) && count.ValueKind == JsonValueKind.Number &&
+            count.TryGetInt32(out int mapCount) && mapCount == 0)
+        {
+            CompanionProtection.TryRemove(key, out _);
+        }
+    }
+
+    private static void AddCompanionRaidProtection(MongoId sessionId, HashSet<string> ids)
+    {
+        if (!CompanionProtection.TryGetValue(sessionId.ToString(), out var raid)) return;
+        lock (raid)
+        {
+            foreach (var spawnIds in raid.SpawnIdsByProfile.Values) ids.UnionWith(spawnIds);
+            ids.ExceptWith(raid.ReleasedIds);
+        }
     }
 
     private static readonly string[] ReturnItemsMessages =
@@ -132,14 +184,7 @@ public class FriendlyPostRaidService(
         }
 
         HashSet<string> protectedIds = teammateService.GetProtectedTeammateItemIdsForExtraction(sessionId);
-        string sessionKey = sessionId.ToString();
-        if (ProtectedRaidItemIds.TryGetValue(sessionKey, out HashSet<string>? registeredIds))
-        {
-            lock (registeredIds)
-            {
-                protectedIds.UnionWith(registeredIds);
-            }
-        }
+        protectedIds.UnionWith(SnapshotProtectedRaidItemIds(sessionId));
 
         if (protectedIds.Count == 0)
         {
@@ -310,16 +355,35 @@ public class FriendlyPostRaidService(
         }
     }
 
-    public void RegisterProtectedRaidItems(MongoId sessionId, FriendlyPostRaidProtectedItemsRequest request)
+    public string[] RegisterProtectedRaidItems(MongoId sessionId, FriendlyPostRaidProtectedItemsRequest request)
     {
         if (request == null)
         {
-            return;
+            return [];
         }
 
         string context = request.Context ?? "client registration";
         RemoveProtectedRaidItemIds(sessionId, request.RemoveItemIds, context);
         RegisterProtectedRaidItemIds(sessionId, request.ItemIds, context);
+        return ReleaseDroppedCompanionItems(sessionId, request.DroppingCompanionProfileId, request.DroppedCompanionItemIds);
+    }
+
+    private string[] ReleaseDroppedCompanionItems(MongoId sessionId, string? profileId, List<string>? itemIds)
+    {
+        if (string.IsNullOrWhiteSpace(profileId) || itemIds == null || itemIds.Count == 0 ||
+            !CompanionProtection.TryGetValue(sessionId.ToString(), out var raid)) return [];
+
+        string[] accepted;
+        int newlyReleased = 0;
+        lock (raid)
+        {
+            if (!raid.SpawnIdsByProfile.TryGetValue(profileId, out var spawnIds)) return [];
+            accepted = itemIds.Where(spawnIds.Contains).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+            foreach (string id in accepted)
+                if (raid.ReleasedIds.Add(id)) newlyReleased++;
+        }
+        if (newlyReleased > 0) logger.Info($"Released extraction protection for {newlyReleased} item(s) dropped by companion {profileId}.");
+        return accepted;
     }
 
     public void RegisterProtectedRaidItemIds(MongoId sessionId, IEnumerable<string>? itemIds, string context)
@@ -408,6 +472,7 @@ public class FriendlyPostRaidService(
                 protectedIds.UnionWith(registeredIds);
             }
         }
+        AddCompanionRaidProtection(sessionId, protectedIds);
 
         if (protectedIds.Count == 0)
         {

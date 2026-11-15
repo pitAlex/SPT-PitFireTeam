@@ -112,6 +112,7 @@ namespace pitTeam.BigBrain.Actions
         private const float RegroupArriveNavDistance = 4f;
         internal const float TightRegroupArriveNavDistance = 2.5f;
         private const float RegroupRunDistance = 10f;
+        private const float RegroupStopRunDistance = 6f;
         private const float SameLevelTolerance = 1.75f;
         private const float RegroupCoverSearchRadius = 15f;
         private const float RegroupRandomRadius = 6f;

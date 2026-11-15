@@ -50,7 +50,7 @@ namespace pitTeam.Patches
 
                         if (follower != null && bot != null && !bot.IsDead &&
                             (
-                                follower.IsSquadMate ||
+                                follower.IsRosterMember ||
                                 (Utils.Props.BossFollowersType.Contains(bot.Profile.Info.Settings.Role) && !Utils.Utils.FlagGet("questGoons"))
                             )
                         )
@@ -96,7 +96,8 @@ namespace pitTeam.Patches
                             }));
 
                             if (player.Profile.Side == EPlayerSide.Savage) Utils.SpawnHelper.spawnMemberIdsScav.Add(bot.AccountId);
-                            else if (isBoss) Utils.SpawnHelper.spawnMemberIdsBoss.Add(transitProfile.Info.Settings.Role);
+                            // Saved Goons share the account-based spawn path with ordinary roster teammates.
+                            else if (isBoss && !follower.IsRosterMember) Utils.SpawnHelper.spawnMemberIdsBoss.Add(transitProfile.Info.Settings.Role);
                             else Utils.SpawnHelper.spawnMemberIds.Add(bot.AccountId);
 
                             Modules.Logger.LogInfo("Transitioning with " + transitProfile.Nickname);

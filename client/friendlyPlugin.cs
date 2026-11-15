@@ -208,7 +208,7 @@ namespace pitTeam
         public string Message { get; set; }
     }
 
-    [BepInPlugin("xyz.pit.fireteam", "PitAlex-PitFireTeam", "1.1.1")]
+    [BepInPlugin("xyz.pit.fireteam", "PitAlex-PitFireTeam", "1.1.2")]
     [BepInDependency("xyz.drakia.bigbrain")]
     [BepInDependency(pitFireTeam.SainPluginId, BepInDependency.DependencyFlags.SoftDependency)]
     [BepInDependency(pitFireTeam.MenuOverhaulPluginId, BepInDependency.DependencyFlags.SoftDependency)]
@@ -409,6 +409,7 @@ namespace pitTeam
             new AICoreAgentUpdatePatch().Enable();
             RuntimeFailureDiagnostics.Apply(harmony);
             GroupSightRecorderPatch.Apply(harmony);
+            PeacefulFollowDiagnostics.Apply(harmony);
 #endif
 
             // recruit/request patches
@@ -428,6 +429,9 @@ namespace pitTeam
             new GearSwapApplyMovementPatch().Enable();
             new GearSwapApplyTriggerPatch().Enable();
             new GearSwapApplyWeaponSelectionPatch().Enable();
+            new GearSwapApplyFirstAidPatch().Enable();
+            new GearSwapApplySurgeryPatch().Enable();
+            new GearSwapApplyStimulatorPatch().Enable();
             new GearSwapApplyShotPatch().Enable();
             new GearSwapApplyAutomaticFirePatch().Enable();
             new GearSwapApplyDamageInfoPatch().Enable();
@@ -521,6 +525,8 @@ namespace pitTeam
             new FollowerFirstAidMinimumHealthPatch().Enable();
             new FollowerFirstAidFracturePatch().Enable();
             new FollowerFirstAidAttemptPatch().Enable();
+            new FollowerFirstAidTimeoutPatch().Enable();
+            new FollowerMedicalDrawPatch().Enable();
             new FollowerSurgeryTargetPatch().Enable();
             new FollowerEnemyInfoCorrectionPatch().Enable();
             new FollowerEnemyInfoSetVisibleCorrectionPatch().Enable();

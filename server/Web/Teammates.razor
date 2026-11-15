@@ -71,6 +71,20 @@
                                     @foreach (var head in _heads) { <MudSelectItem Value="@head.Id">@head.Label</MudSelectItem> }
                                 </MudSelect>
                                 <MudGrid Class="mt-2">
+                                    <MudItem xs="12" sm="6">
+                                        <MudSelect T="string" Label="@T("EditorUpperClothing")" @bind-Value="_draft.BodyId" Disabled="@(_busy || _upperClothing.Count == 0)">
+                                            @if (!_upperClothing.Any(c => c.Id == _savedBodyId)) { <MudSelectItem Value="@_savedBodyId">@_savedBodyId</MudSelectItem> }
+                                            @foreach (var option in _upperClothing) { <MudSelectItem Value="@option.Id">@option.Label</MudSelectItem> }
+                                        </MudSelect>
+                                    </MudItem>
+                                    <MudItem xs="12" sm="6">
+                                        <MudSelect T="string" Label="@T("EditorLowerClothing")" @bind-Value="_draft.FeetId" Disabled="@(_busy || _lowerClothing.Count == 0)">
+                                            @if (!_lowerClothing.Any(c => c.Id == _savedFeetId)) { <MudSelectItem Value="@_savedFeetId">@_savedFeetId</MudSelectItem> }
+                                            @foreach (var option in _lowerClothing) { <MudSelectItem Value="@option.Id">@option.Label</MudSelectItem> }
+                                        </MudSelect>
+                                    </MudItem>
+                                </MudGrid>
+                                <MudGrid Class="mt-2">
                                     <MudItem xs="12" sm="6"><MudNumericField T="int" Label="@T("EditorLevel")" Value="_draft.Level" ValueChanged="SetLevel" Min="1" Max="@_levelXp.Length" Disabled="@_busy" /></MudItem>
                                     <MudItem xs="12" sm="6"><MudNumericField T="int" Label="@T("EditorXp")" Value="_draft.Experience" ValueChanged="SetXp" Min="0" Disabled="@_busy" /></MudItem>
                                 </MudGrid>
@@ -115,11 +129,13 @@
 
 @code {
     private List<TeammateEditorChoice> _players = [], _modes = [], _heads = [], _voices = [];
+    private IReadOnlyList<TeammateEditorChoice> _upperClothing = [], _lowerClothing = [];
     private List<TeammateEditorSummary> _roster = [];
     private Dictionary<string, TeammateEditorPocket> _pockets = [];
     private Dictionary<string, string> _text = [];
     private int[] _levelXp = [];
     private string _player = "", _mode = "GunsForHire", _locale = "en", _message = "", _filter = "";
+    private string _savedBodyId = "", _savedFeetId = "";
     private int _aid;
     private bool _busy, _failed;
     private MudForm? _form;
@@ -145,6 +161,7 @@
         _text = Languages.GetEditorText(locale);
         _heads = Editor.Heads(locale).ToList();
         _voices = Editor.Voices(locale).ToList();
+        if (_draft != null) RefreshClothing();
     }
     private async Task ChangePlayer(string player) { _player = player; await Refresh(); }
     private async Task ChangeMode(string mode) { _mode = mode; await Refresh(); }
@@ -156,8 +173,17 @@
     private async Task Load(int aid)
     {
         _draft = null; _filter = "";
-        await Attempt(async () => { _draft = await Editor.Load(_player, _mode, aid); _aid = aid; });
+        await Attempt(async () => { SetDraft(await Editor.Load(_player, _mode, aid)); _aid = aid; });
     }
+    private void SetDraft(TeammateEditorDraft draft)
+    {
+        _draft = draft;
+        _savedBodyId = draft.BodyId;
+        _savedFeetId = draft.FeetId;
+        RefreshClothing();
+    }
+    private void RefreshClothing() =>
+        (_upperClothing, _lowerClothing) = Editor.Clothing(_player, _savedBodyId, _savedFeetId, _locale);
     private void SetLevel(int level)
     {
         if (_draft == null || level < 1 || level > _levelXp.Length) return;
@@ -176,7 +202,7 @@
         if (!_form.IsValid) { _failed = true; _message = "EditorInvalid"; return; }
         await Attempt(async () =>
         {
-            _draft = await Editor.Save(_player, _mode, _aid, _draft);
+            SetDraft(await Editor.Save(_player, _mode, _aid, _draft));
             _roster = await Editor.Roster(_player, _mode);
             _message = "EditorSaved";
         });

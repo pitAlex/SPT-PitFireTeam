@@ -3,8 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.IO;
 using System.Threading.Tasks;
-using EFT;
-using HarmonyLib;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using SPT.Common.Http;
@@ -60,21 +58,19 @@ namespace pitTeam.Modules
 
         internal static void Reset() { lock (Gate) Current = null; }
 
-        internal static void Begin(LocalGame game)
+        internal static void Begin(string serverId)
         {
-            try
+            if (string.IsNullOrWhiteSpace(serverId))
             {
-                var settings = game == null ? null : AccessTools.Field(game.GetType(), "_raidSettings")?.GetValue(game) as LocalRaidSettings;
-                string id = settings?.serverId;
-                if (string.IsNullOrWhiteSpace(id)) throw new InvalidOperationException("Local raid serverId unavailable.");
-                lock (Gate)
-                {
-                    if (Current?.ServerId == id) return;
-                    Current = new RaidReports { ServerId = id };
-                }
-                Logger.LogInfo($"[FollowerInsurance:ReportStart] serverId='{id}'");
+                Logger.LogError("[FollowerInsurance:ReportStart] Raid serverId unavailable.");
+                return;
             }
-            catch (Exception ex) { Logger.LogError($"[FollowerInsurance:ReportStart] {ex}"); }
+            lock (Gate)
+            {
+                if (Current?.ServerId == serverId) return;
+                Current = new RaidReports { ServerId = serverId };
+            }
+            Logger.LogInfo($"[FollowerInsurance:ReportStart] serverId='{serverId}'");
         }
 
         internal static Report Prepare(string json)

@@ -39,6 +39,8 @@ namespace pitTeam.Modules
         private readonly List<GearSwapEdit> _edits = new List<GearSwapEdit>();
         private readonly Dictionary<string, Item> _draftItems;
         private readonly string _playerBefore, _botBefore;
+        private readonly string _backpackDraftBefore;
+        private readonly string[] _otherFollowerSlotsBefore;
         private readonly HashSet<string> _botIds, _returnIds;
         private readonly HashSet<string> _playerOwnedIds;
         private readonly InventoryScreen.RaidInventoryScreenController _screen;
@@ -70,6 +72,11 @@ namespace pitTeam.Modules
             Profile botProfile = Clone(bot.Profile);
             PlayerDraft = new GearSwapInventoryController(playerProfile) { Session = this };
             BotDraft = new GearSwapInventoryController(botProfile) { Session = this };
+            if (!Giving && AllowBackpackSwap)
+            {
+                _backpackDraftBefore = Snapshot(FollowerEquipment.GetSlot(EquipmentSlot.Backpack)?.ContainedItem);
+                _otherFollowerSlotsBefore = SnapshotNonBackpackSlots().ToArray();
+            }
             _draftItems = Index(PlayerEquipment, FollowerEquipment);
             if (Giving) InitializeDonation();
             var liveItems = Index(owner.Player.InventoryController.Inventory.Equipment, bot.GetPlayer.InventoryController.Inventory.Equipment);
@@ -533,9 +540,24 @@ namespace pitTeam.Modules
             // Installed plate replacements leave firearms and fast-access grids unchanged.
             // An existing packed generated kit must not veto that independent upgrade.
             if (Giving && _donationPlan?.OnlyPlateUpgrades == true) return;
+            if (!Giving && IsBackpackOnlyEdit()) return;
             bool magazineRoom = pitTeam.BigBrain.Actions.GestureCommandAction.CanFitGearSwapReloadReserves(FollowerEquipment);
             if (!magazineRoom)
                 throw new GearSwapValidationException("SwapGearMagazineSpace");
+        }
+
+        private bool IsBackpackOnlyEdit()
+        {
+            return _otherFollowerSlotsBefore != null &&
+                _backpackDraftBefore != Snapshot(FollowerEquipment.GetSlot(EquipmentSlot.Backpack)?.ContainedItem) &&
+                _otherFollowerSlotsBefore.SequenceEqual(SnapshotNonBackpackSlots(), StringComparer.Ordinal);
+        }
+
+        private IEnumerable<string> SnapshotNonBackpackSlots()
+        {
+            var backpack = FollowerEquipment.GetSlot(EquipmentSlot.Backpack);
+            return FollowerEquipment.Slots.Where(slot => !ReferenceEquals(slot, backpack))
+                .Select(slot => Snapshot(slot?.ContainedItem));
         }
 
         private void TrackOwnership()

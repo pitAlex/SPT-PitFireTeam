@@ -25,6 +25,8 @@ namespace pitTeam.Modules
         private static readonly HashSet<string> TransitCooledWeaponIds =
             new HashSet<string>(StringComparer.Ordinal);
 
+        internal static bool HasCarriedGoons { get; private set; }
+
         public static bool TryCapture(
             BotOwner bot,
             IEnumerable<string> protectedEquipmentIds,
@@ -65,6 +67,7 @@ namespace pitTeam.Modules
                 if (role.HasValue)
                 {
                     StoreState(GetRoleKey(role.Value), state);
+                    HasCarriedGoons |= Utils.Props.BossFollowersType.Contains(role.Value);
                 }
 
                 Modules.Logger.LogInfo(
@@ -85,8 +88,10 @@ namespace pitTeam.Modules
         {
             profile = null;
 
-            if (TryTakeState(memberId, out TransitFollowerState state) ||
-                TryTakeState(GetRoleKey(role), out state))
+            // A selected account must recover its own snapshot. Role lookup is for
+            // temporary companions requested without an account ID.
+            string key = string.IsNullOrWhiteSpace(memberId) ? GetRoleKey(role) : memberId;
+            if (TryTakeState(key, out TransitFollowerState state))
             {
                 profile = state.Profile?.Clone();
                 if (profile == null)
@@ -145,6 +150,7 @@ namespace pitTeam.Modules
 
         public static void Clear()
         {
+            HasCarriedGoons = false;
             StatesByKey.Clear();
             TransitSpawnProfileIds.Clear();
             ProtectedEquipmentIdsByProfileId.Clear();

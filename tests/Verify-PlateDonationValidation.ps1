@@ -1,18 +1,23 @@
 param([string]$RepositoryRoot = (Split-Path $PSScriptRoot -Parent))
 $ErrorActionPreference = 'Stop'
 $source = Get-Content -Raw (Join-Path $RepositoryRoot 'client/Modules/TeammateGearSwap.cs')
-$method = [regex]::Match($source, '(?ms)^        private void ValidateFinalEquipment\(\).*?^        \}')
-if (!$method.Success) { throw 'Missing production final equipment validation' }
+$methods = foreach ($signature in @('void ValidateFinalEquipment', 'bool IsBackpackOnlyEdit', 'IEnumerable<string> SnapshotNonBackpackSlots')) {
+    $method = [regex]::Match($source, '(?ms)^        private ' + [regex]::Escape($signature) + '\(\).*?^        \}')
+    if (!$method.Success) { throw "Missing production final equipment method: $signature" }
+    $method.Value
+}
 $fixture = @'
 using System;
 using System.Linq;
 using System.Collections.Generic;
-public enum EquipmentSlot { FirstPrimaryWeapon,SecondPrimaryWeapon,Holster }
-public class Weapon { public string[] MissingVitalParts = new string[0]; }
+public enum EquipmentSlot { FirstPrimaryWeapon, SecondPrimaryWeapon, Holster, Backpack, TacticalVest, Pockets }
+public class Weapon { public string[] MissingVitalParts = new string[0]; public string State = "original-magazine"; }
 public class Slot { public object ContainedItem; }
 public class Equipment {
-    public bool HasWeapon=true;
-    public Slot GetSlot(EquipmentSlot slot)=>new Slot{ContainedItem=HasWeapon?(object)new Weapon():null};
+    public Slot[] Slots = Enumerable.Range(0, 6).Select(_ => new Slot()).ToArray();
+    public Equipment() { HasWeapon = true; }
+    public bool HasWeapon { set { GetSlot(EquipmentSlot.FirstPrimaryWeapon).ContainedItem = value ? new Weapon() : null; } }
+    public Slot GetSlot(EquipmentSlot slot) => Slots[(int)slot];
 }
 public class GiveGearPlanner { public bool OnlyPlateUpgrades; }
 public class GearSwapValidationException : Exception { public GearSwapValidationException(string key):base(key){} }
@@ -24,6 +29,13 @@ namespace pitTeam.BigBrain.Actions {
 }
 public class Session {
     public bool Giving;public GiveGearPlanner _donationPlan;public Equipment FollowerEquipment=new Equipment();
+    private string _backpackDraftBefore;
+    private string[] _otherFollowerSlotsBefore;
+    public void CaptureDraft() {
+        _backpackDraftBefore = Snapshot(FollowerEquipment.GetSlot(EquipmentSlot.Backpack).ContainedItem);
+        _otherFollowerSlotsBefore = SnapshotNonBackpackSlots().ToArray();
+    }
+    private static string Snapshot(object item) => item is Weapon weapon ? weapon.State : item?.ToString();
     public static EquipmentSlot[] FirearmSlots={EquipmentSlot.FirstPrimaryWeapon,EquipmentSlot.SecondPrimaryWeapon,EquipmentSlot.Holster};
     public void Validate()=>ValidateFinalEquipment();
     /* PRODUCTION */
@@ -44,10 +56,47 @@ public static class PlateValidationChecks {
         s._donationPlan=new GiveGearPlanner();pitTeam.BigBrain.Actions.GestureCommandAction.Fits=true;s.Validate();
         Check(pitTeam.BigBrain.Actions.GestureCommandAction.Calls==4,"ordinary donation with room retains reserve validation");
         s.Giving=false;s.FollowerEquipment.HasWeapon=false;Expect(s,"SwapGearNeedsWeapon");
+        s = new Session();
+        var bag = s.FollowerEquipment.GetSlot(EquipmentSlot.Backpack);
+        var rig = s.FollowerEquipment.GetSlot(EquipmentSlot.TacticalVest);
+        var pockets = s.FollowerEquipment.GetSlot(EquipmentSlot.Pockets);
+        bag.ContainedItem = "original bag with cargo";
+        rig.ContainedItem = "full rig";
+        pockets.ContainedItem = "full pockets";
+        s.CaptureDraft();
+        pitTeam.BigBrain.Actions.GestureCommandAction.Fits = false;
+        int before = pitTeam.BigBrain.Actions.GestureCommandAction.Calls;
+        bag.ContainedItem = "replacement bag";
+        s.Validate();
+        bag.ContainedItem = null;
+        s.Validate();
+        bag.ContainedItem = "original bag with different cargo";
+        s.Validate();
+        Check(pitTeam.BigBrain.Actions.GestureCommandAction.Calls == before, "backpack replacement, removal and cargo edits skip the check");
+        rig.ContainedItem = "different rig cargo";
+        Expect(s, "SwapGearMagazineSpace");
+        rig.ContainedItem = "full rig";
+        pockets.ContainedItem = "different pockets cargo";
+        Expect(s, "SwapGearMagazineSpace");
+        pockets.ContainedItem = "full pockets";
+        var weapon = (Weapon)s.FollowerEquipment.GetSlot(EquipmentSlot.FirstPrimaryWeapon).ContainedItem;
+        weapon.State = "different-magazine";
+        Expect(s, "SwapGearMagazineSpace");
+        weapon.State = "original-magazine";
+        s.Validate();
+        Check(pitTeam.BigBrain.Actions.GestureCommandAction.Calls == before + 3, "fully undone changes do not prevent the backpack exception");
+        bag.ContainedItem = "original bag with cargo";
+        Expect(s, "SwapGearMagazineSpace");
+        bag.ContainedItem = "replacement bag";
+        s.Giving = true;
+        Expect(s, "SwapGearMagazineSpace");
+        s.Giving = false;
+        s.FollowerEquipment.HasWeapon = false;
+        Expect(s, "SwapGearNeedsWeapon");
         return checks;
     }
 }
 '@
-Add-Type -TypeDefinition $fixture.Replace('/* PRODUCTION */', $method.Value) -Language CSharp
+Add-Type -TypeDefinition $fixture.Replace('/* PRODUCTION */', ($methods -join "`n")) -Language CSharp
 $checks = [PlateValidationChecks]::Run()
-"PASS: $checks production plate-only donation/final-validation checks; controlled inventory inputs."
+"PASS: $checks production plate-only donation and backpack-only Swap Gear checks using controlled inventory inputs."

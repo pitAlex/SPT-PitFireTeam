@@ -488,22 +488,21 @@ public partial class FriendlyTeammateService(
         string mode = NormalizeLoadoutManagementMode(settingsService.LoadSettings().LoadoutManagementMode);
         if (IsImmersiveLikeLoadoutManagementMode(mode))
         {
-            return LoadTeammates(sessionId).Where(teammate => CompanionPolicy(teammate)?.ProtectSpawnInventory == true)
-                .SelectMany(GetProtectedSpawnItemIdsForExtraction).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         }
 
-        HashSet<string> itemIds = new(StringComparer.OrdinalIgnoreCase);
-        foreach (HashSet<string> teammateItemIds in BuildProtectedTeammateItemIdsByAid(sessionId).Values)
-        {
-            itemIds.UnionWith(teammateItemIds);
-        }
-
-        return itemIds;
+        // The companion preview retains the last raid's item IDs. Only live spawn registration
+        // protects that kit, so the preview cannot reclaim a previously extracted drop.
+        return BuildProtectedTeammateItemIdsByAid(sessionId, includeCompanions: false).Values
+            .SelectMany(ids => ids).ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
+
+    internal bool ProtectsCompanionSpawnInventory(BotBase? profile) =>
+        profile != null && CompanionPolicy(profile)?.ProtectSpawnInventory == true;
 
     public HashSet<string> GetProtectedSpawnItemIdsForExtraction(BotBase? profile)
     {
-        if (profile != null && CompanionPolicy(profile)?.ProtectSpawnInventory == true)
+        if (profile != null && ProtectsCompanionSpawnInventory(profile))
         {
             string? equipment = profile.Inventory?.Equipment?.ToString();
             return (profile.Inventory?.Items ?? []).Where(item => item?.Id != null &&
@@ -541,7 +540,7 @@ public partial class FriendlyTeammateService(
         return protectedIds;
     }
 
-    private Dictionary<string, HashSet<string>> BuildProtectedTeammateItemIdsByAid(MongoId sessionId)
+    private Dictionary<string, HashSet<string>> BuildProtectedTeammateItemIdsByAid(MongoId sessionId, bool includeCompanions = true)
     {
         var itemIdsByAid = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
         foreach (BotBase teammate in LoadTeammates(sessionId))
@@ -552,7 +551,9 @@ public partial class FriendlyTeammateService(
                 continue;
             }
 
-            HashSet<string> itemIds = CompanionPolicy(teammate)?.ProtectSpawnInventory == true
+            bool companion = ProtectsCompanionSpawnInventory(teammate);
+            if (companion && !includeCompanions) continue;
+            HashSet<string> itemIds = companion
                 ? GetProtectedSpawnItemIdsForExtraction(teammate) : GetProtectedTeammateItemIds(teammate);
             if (itemIds.Count > 0)
             {

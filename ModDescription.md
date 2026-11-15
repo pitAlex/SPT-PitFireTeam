@@ -136,6 +136,8 @@ You can switch modes outside raids. Settings that Allegiance does not lock are s
 
 `≥ v. 1.1.0` Open **PitFireTeam** on your SPT server's home page, or visit `https://127.0.0.1:6969/pitfireteam`, to edit saved teammates' names, heads, voices, level, experience, skills, health and pocket size. Head and voice options use the game's localized names. Close Tarkov while editing, save your changes, then launch the game to use them. The workshop keeps their equipment and pocket contents; teammates cannot be deleted there.
 
+`≥ v. 1.1.2` Change a teammate's upper and lower clothing using outfits available to your player profile. They can keep an outfit you haven't unlocked until you save a replacement.
+
 ### Teammate profiles
 
 Right-click a teammate's portrait in **My Squad → Roster** and select **View profile** to rename them, change their clothing, choose a tactic, adjust Proficiency, or view their skills.

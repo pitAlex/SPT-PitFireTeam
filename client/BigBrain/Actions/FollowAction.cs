@@ -15,7 +15,7 @@ namespace pitTeam.BigBrain.Actions
     /// settle/cover positions, resumes chase when out of range, and plays peaceful look/watch actions
     /// when no command or combat layer owns the bot.
     /// </summary>
-    internal class FollowAction : CustomLogic
+    internal partial class FollowAction : CustomLogic
     {
         private const float FallbackFollowDistance = 12f;
         private const bool EnableFollowDebug = false;
@@ -30,8 +30,11 @@ namespace pitTeam.BigBrain.Actions
         private const float SettleDestinationClaimTtlSeconds = 3f;
         private const float SettleDestinationClaimReleaseTolerance = 0.5f;
         private const float FollowPathRecoveryCooldown = 0.5f;
+        private const float FollowNavMeshSampleRadius = 5f;
         private const float FollowSprintEngagementFailureSeconds = 1.25f;
         private const float FollowWalkFallbackSeconds = 3f;
+        private const float FollowSprintStartMargin = 1f;
+        private const float FollowSprintStopMargin = 2f;
         private const float PatrolLeaderIdleRequiredSeconds = 5f;
         private const float PatrolLeaderMoveInputThresholdSqr = 0.01f;
         private const float PatrolLeaderMoveSampleInterval = 0.35f;
@@ -48,6 +51,7 @@ namespace pitTeam.BigBrain.Actions
         private float nextFollowPathRecoveryAt;
         private float followSprintEngagementFailureSince;
         private float followWalkFallbackUntil;
+        private bool followSprintRequested;
         private float nextSettlePointAt;
         private bool isPathBlocked;
 
@@ -107,6 +111,9 @@ namespace pitTeam.BigBrain.Actions
             nextFollowPathRecoveryAt = 0f;
             followSprintEngagementFailureSince = 0f;
             followWalkFallbackUntil = 0f;
+            followSprintRequested = false;
+            ResetFollowFormation();
+            ResetFollowRouteProgress();
             nextSettlePointAt = 0f;
             holdPositionUntil = 0f;
             nextPatrolUpdateAt = 0f;
@@ -188,6 +195,9 @@ namespace pitTeam.BigBrain.Actions
             nextPatrolUpdateAt = 0f;
             nextFollowUpdateAt = 0f;
             nextFollowPathRecoveryAt = 0f;
+            followSprintRequested = false;
+            ResetFollowFormation();
+            ResetFollowRouteProgress();
             coverCommitment.ClearCommitment();
 
             BotOwner.StopMove();
@@ -242,6 +252,28 @@ namespace pitTeam.BigBrain.Actions
         {
             if (bossPlayer == null) return;
 
+            ObserveFollowRouteProgress();
+            Vector3 leaderPosition = GetLeaderTargetPosition();
+            float distance = forceFollow ? forcedDistance : (leaderPosition - BotOwner.Position).magnitude;
+            float followDistance = GetEffectiveFollowDistance();
+            bool inRange = distance < followDistance &&
+                           Mathf.Abs(leaderPosition.y - BotOwner.Position.y) <= SameLevelTolerance;
+            if (!forceFollow && bossPlayer == bossData?.realPlayer)
+            {
+                if (UpdateFollowFormation(bossPlayer, leaderPosition, distance, followDistance, inRange))
+                {
+                    RecordFollowSample(leaderPosition, inRange);
+                    return;
+                }
+                if (followingFormation) nextFollowUpdateAt = 0f;
+                ClearFormationRoute();
+            }
+            else
+            {
+                if (followingFormation) nextFollowUpdateAt = 0f;
+                ResetFollowFormation();
+            }
+
             // A follower that is already walking to a settle point should keep the point active.
             // Otherwise normalize posture once so the bot does not continue patrol crouched/prone
             // after combat, looting, or a hold command.
@@ -256,14 +288,12 @@ namespace pitTeam.BigBrain.Actions
                 BotOwner.Mover.SetPose(1f);
             }
 
-            Vector3 leaderPosition = GetLeaderTargetPosition();
-            float distance = forceFollow
-                ? forcedDistance
-                : Mathf.Abs((leaderPosition - BotOwner.Position).magnitude);
-
-            float followDistance = GetEffectiveFollowDistance();
-            bool inRange = distance < followDistance &&
-                           Mathf.Abs(leaderPosition.y - BotOwner.Position.y) <= SameLevelTolerance;
+            RecordFollowSample(leaderPosition, inRange);
+            if (inRange && followSprintRequested)
+            {
+                followSprintRequested = false;
+                ApplyFollowChaseMovementState(false);
+            }
 
             if (nextFollowUpdateAt > Time.time && !forceFollow)
             {
@@ -382,14 +412,14 @@ namespace pitTeam.BigBrain.Actions
 
             // Normal follow is allowed to sprint when the boss has opened distance. Once close enough,
             // the settle logic above takes over and moves the follower into a stable local position.
-            ApplyFollowChaseMovementState(ShouldSprintFollow(distance, followDistance));
+            ApplyFollowChasePace(distance, followDistance);
         }
 
         private void MaintainOutOfRangeChase(Vector3 leaderPosition, float distance, float followDistance)
         {
             movingToSettlePoint = false;
             ReleaseSettleDestinationClaim();
-            ApplyFollowChaseMovementState(ShouldSprintFollow(distance, followDistance));
+            ApplyFollowChasePace(distance, followDistance);
 
             if (BotOwner.Mover?.HasPathAndNoComplete == true)
             {
@@ -405,9 +435,12 @@ namespace pitTeam.BigBrain.Actions
             UpdateFollowPath(leaderPosition);
         }
 
-        private static bool ShouldSprintFollow(float distance, float followDistance)
+        private void ApplyFollowChasePace(float distance, float followDistance)
         {
-            return distance > Mathf.Min(followDistance + 3f, 16f);
+            float threshold = Mathf.Min(followDistance + 3f, 16f);
+            followSprintRequested = FollowerSprintDistancePolicy.ShouldSprint(
+                distance, followSprintRequested, threshold + FollowSprintStartMargin, threshold - FollowSprintStopMargin);
+            ApplyFollowChaseMovementState(followSprintRequested);
         }
 
         private void ApplyFollowChaseMovementState(bool shouldSprint)
@@ -1016,20 +1049,6 @@ namespace pitTeam.BigBrain.Actions
         }
 
 
-        private NavMeshPathStatus GoToPosition(Vector3 position)
-        {
-            NavMeshPathStatus pathStatus = BotOwner.GoToPoint(position, true, -1f, false, false);
-            if (pathStatus == NavMeshPathStatus.PathComplete)
-            {
-                if (!TryApplyCommandLookOverride())
-                {
-                    BotOwner.Steering.LookToMovingDirection();
-                }
-            }
-
-            return pathStatus;
-        }
-
         private bool TryApplyCommandLookOverride()
         {
             return BotFollowerPlayer.TryApplyCommandLookOverride(BotOwner);
@@ -1038,28 +1057,43 @@ namespace pitTeam.BigBrain.Actions
         private void UpdateFollowPath(Vector3 leaderPosition)
         {
             isPathBlocked = false;
-            if (GoToPosition(leaderPosition) == NavMeshPathStatus.PathComplete)
+            if (SetFollowPath(leaderPosition, "leader") != FollowPathResult.Failed)
             {
                 return;
             }
 
-            if (NavMesh.SamplePosition(leaderPosition, out _, 5f, -1) && GoToPosition(leaderPosition) != NavMeshPathStatus.PathComplete)
+            if (!NavMesh.SamplePosition(leaderPosition, out NavMeshHit hit, FollowNavMeshSampleRadius, NavMesh.AllAreas))
             {
-                isPathBlocked = true;
+                return;
             }
 
-            if (isPathBlocked)
+            // The retry needs a complete NavMesh route. EFT's core-point recovery can teleport on path errors.
+            if (hit.position != leaderPosition &&
+                Mathf.Abs(hit.position.y - leaderPosition.y) <= SameLevelTolerance &&
+                SetFollowPath(hit.position, "sampledLeader", onlyShortTrie: true) != FollowPathResult.Failed)
             {
-                CustomNavigationPoint freeClosePoint = BotOwner.Covers.GetFreeClosePoint(leaderPosition, 1f, false);
-                if (freeClosePoint != null)
-                {
-                    GoToPosition(freeClosePoint.Position);
-                }
+                return;
             }
+
+            if (BotOwner.Mover.HasPathAndNoComplete)
+            {
+                return;
+            }
+
+            CustomNavigationPoint freeClosePoint = BotOwner.Covers.GetFreeClosePoint(leaderPosition, 1f, false);
+            isPathBlocked = freeClosePoint == null ||
+                            Mathf.Abs(freeClosePoint.Position.y - leaderPosition.y) > SameLevelTolerance ||
+                            SetFollowPath(freeClosePoint.Position, "nearbyCover", onlyShortTrie: true) == FollowPathResult.Failed;
         }
 
         private void SetPatrolEnabled(bool state)
         {
+            if (state && !patrolEnabled)
+            {
+                followSprintRequested = false;
+                ResetFollowFormation();
+                ResetFollowRouteProgress();
+            }
             patrolEnabled = state;
 
             if (!state)

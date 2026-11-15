@@ -7,22 +7,25 @@ internal static class Program
     static void Check(bool value,string reason){checks++;if(!value)throw new Exception(reason);}
     static void Main()
     {
-        foreach(string mode in new[]{"safe","far","near","unknown","dead","nan","sample","height","partial","fireLane","noPath","shiftTooFar","noFloor","steepFloor","wrongFloor","stair"})
+        foreach(string mode in new[]{"safe","far","near","unknown","dead","nan","sample","height","partial","fireLane","noPath","shiftTooFar","noFloor","steepFloor","wrongFloor","stair","shorter","sideLane","sidePath","shortGround"})
         {
             NavMesh.Reset();var p=new Planner();var enemy=new EnemyInfo{Known=mode!="unknown",Alive=mode!="dead"};
             var lead=new Vector3(mode=="near"?3:mode=="far"?50:15,0,0);
             if(mode=="nan")lead.x=float.NaN;
-            NavMesh.Sample=mode!="sample";NavMesh.Complete=mode!="partial";NavMesh.Path=mode!="noPath";
-            NavMesh.Shift=mode=="height"?new(0,2,0):mode=="shiftTooFar"?new(2,0,0):default;p.BlockLane=mode=="fireLane";
+            NavMesh.Sample=mode!="sample";NavMesh.Complete=mode!="partial";NavMesh.Path=mode!="noPath";NavMesh.Mode=mode;
+            NavMesh.Shift=mode=="height"?new(0,2,0):mode=="shiftTooFar"?new(0.5f,0,0):default;p.LaneMode=mode;
             Physics.SetMode(mode);
-            if(mode=="shiftTooFar")lead=new(50,0,0);
+            if(mode is "shiftTooFar" or "shorter" or "sideLane" or "sidePath" or "shortGround")lead=new(50,0,0);
             bool success=p.TryPlanCombatFollowDecision(enemy,lead,"groupFollow",out var point,out var decision);
-            Check(success==(mode is "safe" or "far" or "stair"),"bounded safe group-follow admission: "+mode);
+            Check(success==(mode is "safe" or "far" or "stair" or "shiftTooFar" or "shorter" or "sideLane" or "sidePath" or "shortGround"),"bounded safe group-follow admission: "+mode);
             Check(p.botOwner.Position.sqrMagnitude==0,"planning never moves or teleports the actor: "+mode);
             if(success)
             {
                 Check(point.x<lead.x && Vector3.Distance(point,lead)>=2,"follow point stays behind and clear of leader");
                 Check(point.sqrMagnitude<=400 && decision.Action==BotLogicDecision.goToPoint,"bounded travel uses ordinary movement owner");
+                if(mode=="sideLane")Check(point.z>=2,"alternate step avoids the direct and shorter firing lane");
+                if(mode=="sidePath")Check(point.z<=-2,"alternate step uses the side with a complete route");
+                if(mode=="shortGround")Check(point.x<=10,"shorter destination has physical ground");
             }
         }
         foreach(string mode in new[]{"safe","far","standoff","unknown","dead","sample","height","partial","fireLane","noPath","noFloor","steepFloor","wrongFloor","stair"})
@@ -57,10 +60,14 @@ class CoreActionResultParams {}
 struct AICoreActionResult<T,D>(T action,string reason) {public T Action=action;public string Reason=reason;}
 partial class Planner
 {
-    internal BotOwner botOwner=new();internal bool BlockLane;
+    internal BotOwner botOwner=new();internal bool BlockLane;internal string LaneMode;
     bool HasActiveCombatEnemy(EnemyInfo e)=>e?.Alive==true;
     static bool IsFinite(Vector3 v)=>float.IsFinite(v.x)&&float.IsFinite(v.y)&&float.IsFinite(v.z);
-    bool IsBossFireLaneMovementRisk(Vector3 p,Vector3 a,bool includePath)=>BlockLane;
+    bool IsBossFireLaneMovementRisk(Vector3 p,Vector3 a,bool includePath)=>BlockLane || LaneMode=="fireLane" || LaneMode=="sideLane" && MathF.Abs(p.z)<2;
+}
+static class BattleRecorder
+{
+    public static void RecordObjectiveDiagnostic(BotOwner bot,string objective,string action,string reason,Func<object> details){}
 }
 static class FollowerEnemyTracking
 {
@@ -74,7 +81,7 @@ namespace UnityEngine
         public float x=x,y=y,z=z;public float sqrMagnitude=>x*x+y*y+z*z;public float magnitude=>MathF.Sqrt(sqrMagnitude);
         public static Vector3 right=>new(1,0,0);
         public static Vector3 up=>new(0,1,0);public static Vector3 down=>new(0,-1,0);
-        public Vector3 normalized{get{float n=MathF.Sqrt(sqrMagnitude);return new(x/n,y/n,z/n);}}
+        public Vector3 normalized{get{float n=MathF.Sqrt(sqrMagnitude);return n>0.00001f?new(x/n,y/n,z/n):default;}}
         public static Vector3 operator+(Vector3 a,Vector3 b)=>new(a.x+b.x,a.y+b.y,a.z+b.z);
         public static Vector3 operator-(Vector3 a,Vector3 b)=>new(a.x-b.x,a.y-b.y,a.z-b.z);
         public static Vector3 operator*(Vector3 a,float b)=>new(a.x*b,a.y*b,a.z*b);
@@ -94,7 +101,7 @@ namespace UnityEngine
             if(direction.y!=-1 || distance!=1f)throw new Exception("unexpected ground query geometry");
             float offset=Mode=="wrongFloor"?-1:Mode=="stair"?-0.2f:0;
             hit=new(){point=new(origin.x,Mode=="nanHit"?float.NaN:origin.y-0.5f+offset,origin.z),normal=new(0,Mode=="steepFloor"?0.2f:1,0)};
-            return Mode!="noFloor";
+            return Mode!="noFloor" && (Mode!="shortGround" || origin.x<=10);
         }
     }
 }
@@ -105,9 +112,9 @@ namespace UnityEngine.AI
     public struct NavMeshHit{public Vector3 position;}
     public static class NavMesh
     {
-        public const int AllAreas=-1;public static bool Sample=true,Complete=true,Path=true;public static Vector3 Shift;
-        public static void Reset(){Sample=Complete=Path=true;Shift=default;}
-        public static bool SamplePosition(Vector3 p,out NavMeshHit hit,float radius,int mask){hit=new(){position=p+Shift};return Sample;}
-        public static bool CalculatePath(Vector3 a,Vector3 b,int mask,NavMeshPath path){path.status=Complete?NavMeshPathStatus.PathComplete:NavMeshPathStatus.PathPartial;return Path;}
+        public const int AllAreas=-1;public static bool Sample=true,Complete=true,Path=true;public static Vector3 Shift;public static string Mode;
+        public static void Reset(){Sample=Complete=Path=true;Shift=default;Mode=null;}
+        public static bool SamplePosition(Vector3 p,out NavMeshHit hit,float radius,int mask){hit=new(){position=p+Shift};return Sample && (Mode!="shorter" || p.x<=15);}
+        public static bool CalculatePath(Vector3 a,Vector3 b,int mask,NavMeshPath path){path.status=Complete && (Mode!="sidePath" || b.z<-2)?NavMeshPathStatus.PathComplete:NavMeshPathStatus.PathPartial;return Path;}
     }
 }

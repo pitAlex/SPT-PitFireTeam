@@ -79,7 +79,7 @@ Only followers alive at the moment the player dies can escape. Followers who alr
 Current probability inputs:
 
 - extract distance from the player death position
-- surviving squadmate count
+- strength of the surviving squad. Each active, living Goon contributes twice the strength of a regular squadmate to the escape and current-fight calculations. Escape rolls and gear recovery remain limited to eligible squadmates.
 - follower health ratio
 - follower equipment power
 - average enemy equipment power in the current fight at player death

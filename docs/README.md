@@ -51,7 +51,7 @@ These documents describe pitFireTeam core and shared behavior. The optional SAIN
 | [Follower Insurance](Follower-Insurance.md) | Purchase, policy transfers, raid evidence, settlement and stock trader returns |
 | [Teammate Storage](Teammate-Storage.md) | Database representation, migration and recovery |
 | [Teammate Health](Teammate-Health.md) | HP-only raid retention, spawn normalization, recovery and treatment |
-| [Teammate web editor](Teammate-Web-Editor.md) | Server-hosted name, head, voice, level/XP, skills, health and pockets editor with equipment restrictions |
+| [Teammate web editor](Teammate-Web-Editor.md) | Server-hosted editor for names, appearance, level/XP, skills, health and pockets |
 | [Database Tool](../tools/DatabaseTool/README.md) | Offline encrypted database export, JSON editing, validated import and backups |
 
 ## Shared tactical settings

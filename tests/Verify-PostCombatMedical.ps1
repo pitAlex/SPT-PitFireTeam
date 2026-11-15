@@ -71,7 +71,7 @@ namespace EFT {
         public Vector3 Position; public Profile Profile=new Profile(); public Brain Brain=new Brain(); public Memory Memory=new Memory(); public Mover Mover=new Mover();
         public string ProfileId=Guid.NewGuid().ToString(); public Player GetPlayer=new Player();
         public Health HealthController=>GetPlayer.HealthController; public Medicine Medecine=new Medicine();
-        public Weapon WeaponManager=new Weapon(); public bool MainSelected=true; public int ForceHeals,ReturnRequests,NodeUpdates;
+        public Weapon WeaponManager=new Weapon(); public bool MainSelected=true,TreatableSurgery; public int ForceHeals,ReturnRequests,NodeUpdates;
     }
     public class HealNode { private BotOwner bot; public HealNode(BotOwner b){bot=b;} public void UpdateNodeByBrain(object d){bot.NodeUpdates++;} }
 }
@@ -102,6 +102,7 @@ namespace pitTeam.Utils {
         public static string DescribePostCombatRecovery(BotOwner b)=>"recovery=test";
         private static string GetBotKey(BotOwner b)=>b?.ProfileId;
         private static bool IsMainWeaponSelected(BotOwner b)=>b.MainSelected;
+        internal static bool HasTreatableSurgery(BotOwner b)=>b.TreatableSurgery;
         private static void TryReturnToMainWeapon(BotOwner b){b.ReturnRequests++;}
         public static void ForceHeal(BotOwner b){b.ForceHeals++;}
         public static void RefreshMedicalWork(BotOwner b){}
@@ -151,6 +152,9 @@ public static class MedicalChecks {
         bot.Medecine.SurgicalKit.Using=true;
         Check(!FollowerMedical.TryCompletePostCombatFullHealRestore(bot)&&bot.ForceHeals==0,"ElapsedRecovery_PreservesActiveSurgery");
         bot.Medecine.SurgicalKit.Using=false;bot.WeaponManager.IsWeaponReady=false;
+        bot.TreatableSurgery=true;
+        Check(!FollowerMedical.TryCompletePostCombatFullHealRestore(bot)&&bot.ForceHeals==0&&bot.ReturnRequests==0,"ElapsedRecoveryLeavesTreatableDestroyedPartsForSurgery");
+        bot.TreatableSurgery=false;
         Check(!FollowerMedical.TryCompletePostCombatFullHealRestore(bot)&&bot.ReturnRequests==1,"RecoveryWaitsForReadyWeapon");
         bot.WeaponManager.IsWeaponReady=true;bot.MainSelected=false;
         Check(!FollowerMedical.TryCompletePostCombatFullHealRestore(bot)&&bot.ReturnRequests==2,"RecoveryWaitsForMainWeapon");

@@ -507,10 +507,6 @@ namespace pitTeam.Patches
      */
     internal class RaidStartPatch : ModulePatch
     {
-        public static bool HasFika()
-        {
-            return Type.GetType("Fika.Core.Coop.GameMode.CoopGame, Fika.Core") != null;
-        }
         protected override MethodBase GetTargetMethod()
         {
             return AccessTools.Method(typeof(EFT.EftClientBackendSession), "SendRaidSettings");

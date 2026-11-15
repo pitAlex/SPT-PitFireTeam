@@ -239,6 +239,10 @@ Execution:
 - `FollowAction` checks `followerData.CanPatrol` every update.
 - When disabled, the action uses normal close follow/settle behavior.
 - Normal automatic settling accepts cover and sampled fallback points only within `1.75m` vertically of both the boss and follower, matching peaceful Regroup's same-level tolerance. A follower on another floor keeps following toward the boss even inside the straight-line follow radius; a committed settle cover on the wrong level is released before selecting another point.
+- If the direct chase request fails, follow retries at the sampled NavMesh point within `1.75m` vertically of the leader. The retry requires a complete NavMesh route. An active route can continue if the retry fails. Nearby cover is a fallback only when the follower has no active route, and it uses the same height and route checks.
+- Before replacing a chase route that starts by pointing backward, follow checks whether it can safely join one of the first forward corners of the new route. If the connection is blocked and the follower is still advancing, it keeps its current route for up to 0.4 seconds and retries. A genuine leader reversal can take effect immediately. Door approaches use native path handling.
+- Staggered follow starts after sustained travel of at least 4m while sprinting or 6m while walking. Short movements in place keep the existing settle behavior. While the player runs, followers refresh a nearby destination early and use the player's forward progress to decide when to slow down. When the player slows or stops, followers can keep sprinting inside the follow radius and walk the final 3.5m to their position. Doorways and unreachable offsets use the ordinary follow route.
+- After the player stops, a follower within the follow radius can finish approaching its position for up to three seconds before returning to ordinary settling. The formation applies to peaceful follow of the human player. The Debug recorder captures the selected position, actual speed and native foliage contact.
 - When enabled, `CanPatrol` is treated as patrol intent, not immediate patrol ownership:
   - before patrol arms, boss/player movement resets the patrol runtime gate and the follower behaves like normal follow
   - if the follower is outside normal follow range, the follower catches up with normal follow behavior before patrol can arm
@@ -413,6 +417,7 @@ Execution:
 - Reserves regroup destinations through `CombatEvents` to reduce crowding.
 - Runs when far enough, otherwise walks.
 - Completes when within close nav distance and same-level tolerance.
+- When peaceful regroup arrives or expires, the patrol layer selects a fresh action and resumes following when safe. This also applies to the regroup issued by Team Combine.
 
 Combat variant:
 

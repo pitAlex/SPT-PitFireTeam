@@ -22,6 +22,8 @@ public record TeammateEditorDraft
     public string HeadId { get; set; } = "";
     public string Nickname { get; set; } = "";
     public string VoiceId { get; set; } = "";
+    public string BodyId { get; set; } = "";
+    public string FeetId { get; set; } = "";
     public int Level { get; set; }
     public int Experience { get; set; }
     public string PocketId { get; set; } = "";

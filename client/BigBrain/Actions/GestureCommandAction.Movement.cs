@@ -154,17 +154,9 @@ namespace pitTeam.BigBrain.Actions
 
             float regroupDistance = (regroupTarget - BotOwner.Position).magnitude;
             float regroupPressureDistance = Mathf.Max(regroupDistance, navDistanceToBoss);
-            if (regroupRunMode)
-            {
-                regroupRunMode = regroupPressureDistance > 6f;
-            }
-            else if (regroupPressureDistance >= RegroupRunDistance)
-            {
-                regroupRunMode = true;
-            }
-
-            bool shouldRun = regroupRunMode;
-            BotOwner.GoToSomePointData.UpdateToGo(shouldRun, 1, 1f);
+            regroupRunMode = FollowerSprintDistancePolicy.ShouldSprint(
+                regroupPressureDistance, regroupRunMode, RegroupRunDistance, RegroupStopRunDistance);
+            BotOwner.GoToSomePointData.UpdateToGo(regroupRunMode, 1, 1f);
             moveCommandInitialized = false;
             moveArrivalLookUntil = 0f;
             comeArrivalHoldUntil = 0f;
