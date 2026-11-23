@@ -671,7 +671,8 @@ namespace pitTeam.Patches
 
                 CancelToken token = cancelToken != null ? cancelToken : new CancelToken();
 
-                BotSpawner botSpawnerClass = Controller.BotSpawner;
+                var raidController = Controller;
+                BotSpawner botSpawnerClass = raidController.BotSpawner;
                 BotCreator botCreator = botSpawnerClass._botCreator as BotCreator;
 
                 Vector3 position = player.Position;
@@ -732,18 +733,13 @@ namespace pitTeam.Patches
 
                 if (bossAlly == null) return;
 
-                var closestCorePoint = GetClosestCorePoint(Controller, position);
+                if (!ReferenceEquals(Controller, raidController) ||
+                    !ReferenceEquals(BossPlayers.GetBoss(player.realPlayer.ProfileId), player)) return;
+                var closestCorePoint = GetClosestCorePoint(raidController, position);
                 bossAlly.AddPosition(position, closestCorePoint.Id);
 
-
-                var spawnWorld = Singleton<GameWorld>.Instance;
                 await Task.WhenAll(bossAlly.Profiles.Select(async profile =>
                 {
-                    BotOwner activatedOwner = null;
-                    var registration = new TaskCompletionSource<BotFollowerPlayer>();
-
-                    InteractableObjects.StoreEquipment(profile);
-
                     if (!FollowerTransitStateCache.IsTransitSpawnProfile(profile.ProfileId) &&
                         !GameplayModeAddons.OwnsCompanionCombat(profile.Info.Settings.Role.ToString()))
                     {
@@ -790,116 +786,37 @@ namespace pitTeam.Patches
                     profile.Info.GroupId = player.realPlayer.GroupId;
                     profile.Info.TeamId = player.Player().Profile.Info.TeamId;
 
-                    Stopwatch stopWatch = new Stopwatch();
-                    stopWatch.Start();
-
-                    Action<BotOwner> OnActivate = new Action<BotOwner>((BotOwner owner) =>
+                    BotFollowerPlayer Attach(BotOwner me)
                     {
-                        activatedOwner = owner;
-                        Action<BotOwner> OnBotState = new Action<BotOwner>((BotOwner me) =>
+                        me.Memory.DeleteInfoAboutEnemy(player.Player());
+                        RestoreSpawnHealth(me);
+                        me.Memory.IsPeace = true;
+                        if (me.Side != side) me.GetPlayer.Profile.Info.Side = side;
+                        if (!me.IsRole(botRole)) me.GetPlayer.Profile.Info.Settings.Role = botRole;
+
+                        // Big Pipe shares Knight's legacy quest-companion logic.
+                        if (me.IsRole(WildSpawnType.followerBigPipe) && me.Boss != null)
                         {
-                            BotOwnerManualUpdatePatch.BotOwnerUpdate.Remove(me.ProfileId); // clear watcher
-
-                            try
-                            {
-                                // prevent attack of player on spawn
-                                me.Memory.DeleteInfoAboutEnemy(player.Player());
-
-                                if (!FollowerTransitStateCache.IsTransitSpawnProfile(me.ProfileId))
-                                {
-                                    if (!FollowerRaidHealthRetention.Begin(me))
-                                        me.GetPlayer.ActiveHealthController.RestoreFullHealth();
-                                }
-                                else
-                                {
-                                    Modules.Logger.LogInfo($"[Transit] Preserved carried health for '{me.Profile?.Nickname ?? me.ProfileId}'.");
-                                }
-
-                                me.Memory.IsPeace = true;
-
-                                // force player side on the bot
-                                if (me.Side != side)
-                                {
-                                    me.GetPlayer.Profile.Info.Side = side;
-                                }
-
-                                if (!me.IsRole(botRole))
-                                {
-                                    me.GetPlayer.Profile.Info.Settings.Role = botRole;
-                                }
-
-                                // our Pipe needs the same boss logic as knight due to their shared fighting logic
-                                if (me.IsRole(WildSpawnType.followerBigPipe))
-                                {
-                                    if (me.Boss != null)
-                                    {
-                                        if (me.Boss.BossLogic != null)
-                                            me.Boss.BossLogic.Dispose();
-
-                                        me.Boss.BossLogic = new BossKnight(me, me.Boss);
-                                        me.Boss.NeedProtection = false;
-                                    }
-
-                                }
-                                // make bot boss a follower
-                                var follower = BossPlayers.AddFollower(me, player, false, botRole);
-                                if (follower == null) throw new InvalidOperationException("Quest companion registration returned no follower");
-                                registration.TrySetResult(follower);
-                                me.BotTalk.SetSilence(0f);
-                                Utils.Utils.SetTimeout(() =>
-                                {
-                                    if (player.Followers.Count > 0)
-                                    {
-                                        player.Followers.PickRandom().BotTalk.TrySay(EPhraseTrigger.MumblePhrase);
-                                    }
-                                }, 1500);
-                            }
-                            catch (Exception ex)
-                            {
-                                Modules.Logger.LogError("Failed to add " + me.Profile.Nickname + " as ally");
-                                Modules.Logger.LogError(ex);
-                                registration.TrySetException(ex);
-                            }
-                        });
-
-                        BotOwnerManualUpdatePatch.BotOwnerUpdate.Add(owner.ProfileId, OnBotState);
-
-                        // force player side on the bot
-                        if (owner.Side != side)
-                        {
-                            owner.GetPlayer.Profile.Info.Side = side;
+                            me.Boss.BossLogic?.Dispose();
+                            me.Boss.BossLogic = new BossKnight(me, me.Boss);
+                            me.Boss.NeedProtection = false;
                         }
 
-                        botSpawnerClass.ActivateBotCallback(owner, bossAlly, new Action<BotOwner>((BotOwner follower) =>
+                        var follower = BossPlayers.AddFollower(me, player, false, botRole);
+                        if (follower == null) return null;
+                        me.BotTalk.SetSilence(0f);
+                        Utils.Utils.SetTimeout(() =>
                         {
-                            Modules.Logger.LogInfo("Ally " + follower.Profile.Nickname + " spawned");
+                            if (ReferenceEquals(BossPlayers.GetBoss(player.realPlayer.ProfileId), player) &&
+                                BossPlayers.IsFollower(me) && player.Followers.Count > 0)
+                                player.Followers.PickRandom().BotTalk.TrySay(EPhraseTrigger.MumblePhrase);
+                        }, 1500);
+                        return follower;
+                    }
 
-                        }), true, stopWatch);
-
-                    });
-
-                    Func<BotOwner, BotZone, BotsGroup> GroupAction = new Func<BotOwner, BotZone, BotsGroup>((BotOwner bt, BotZone zn) =>
-                    {
-                        return GetPlayerGroup(player, bt, zn, bossAlly.Count);
-                    });
-                    // activate the boss bot
-                    BossPlayers.ShallBeFollower(profile.ProfileId);
-                    bool activated = await ActivateBotAtPosition(
-                        botCreator,
-                        profile,
-                        new spawnPosition(position, closestCorePoint.Id, false),
-                        zone, true,
-                        GroupAction,
-                        OnActivate,
-                        token.GetCancelToken()
-                    );
-                    if (!activated) throw new InvalidOperationException("Quest companion activation failed");
-                    bool Valid() => Singleton<GameWorld>.Instantiated && ReferenceEquals(Singleton<GameWorld>.Instance, spawnWorld) && activatedOwner != null &&
-                        !activatedOwner.IsDead && activatedOwner.GetPlayer?.HealthController?.IsAlive == true &&
-                        botCreator._game.Status != GameStatus.Stopped && botCreator._game.Status != GameStatus.Stopping &&
-                        botCreator._game.Status != GameStatus.SoftStopping;
-                    await CompleteSavedFollowerSpawn(registration.Task, () => activatedOwner, player, botRole.ToString(),
-                        Valid, () => botCreator._game.Status == GameStatus.Started);
+                    await SpawnSavedFollower(raidController, botCreator, bossAlly, profile,
+                        new spawnPosition(position, closestCorePoint.Id, false), zone, player, side, true,
+                        (bot, botZone) => GetPlayerGroup(player, bot, botZone, bossAlly.Count), Attach, token.GetCancelToken());
                 }));
             }
             catch (Exception ex)
@@ -927,7 +844,6 @@ namespace pitTeam.Patches
             var selectedAccounts = selectedMemberIds.ToArray();
             bool RaidValid() => ReferenceEquals(Controller, raidController) &&
                 ReferenceEquals(BossPlayers.GetBoss(player.realPlayer.ProfileId), player);
-            CancelToken token = new CancelToken();
 
             BotCreator botCreator = botSpawnerClass._botCreator as BotCreator;
 
@@ -1051,128 +967,38 @@ namespace pitTeam.Patches
                 return GetPlayerGroup(player, bt, zn, memberCount);
             });
 
-            var closestCorePoint = GetClosestCorePoint(Controller, position);
+            if (!RaidValid()) return;
+            var closestCorePoint = GetClosestCorePoint(raidController, position);
             botsData.AddPosition(position, closestCorePoint.Id);
 
             await Task.WhenAll(botsData.Profiles.Select(async profile =>
             {
-                BotOwner activatedOwner = null;
-                var registration = new TaskCompletionSource<BotFollowerPlayer>();
                 string expectedRole = profile.Info?.Settings?.Role.ToString();
-                try
+                EPlayerSide followerSide = ResolveFollowerSpawnSide(profile, side);
+                BotFollowerPlayer Attach(BotOwner bot)
                 {
-                    InteractableObjects.StoreEquipment(profile);
-                    EPlayerSide followerSide = ResolveFollowerSpawnSide(profile, side);
+                    bot.Memory.DeleteInfoAboutEnemy(player.Player());
+                    RestoreSpawnHealth(bot);
 
-                    Action<BotOwner> OnActivate = new Action<BotOwner>((BotOwner owner) =>
-                    {
-                        activatedOwner = owner;
-                        bool shallBeGroup = botsData.SpawnParams?.ShallBeGroup != null;
+                    string key = profile.ProfileId;
+                    bool saved = side != EPlayerSide.Savage;
+                    if (saved && !string.Equals(bot.ProfileId, key, StringComparison.Ordinal))
+                        throw new InvalidOperationException("Activated follower identity changed");
+                    string tactic = saved ? profileTactic[key] :
+                        (profileTactic.TryGetValue(key, out var scavTactic) ? scavTactic : "Default");
+                    float aggression = saved ? profileAggression[key] : 50f;
+                    var proficiency = saved ? profileProficiency[key] : null;
+                    float determination = saved ? profileDetermination[key] : 50f;
+                    WildSpawnType botType = bot.Profile.Info?.Settings?.Role ?? type;
+                    if (saved && !string.Equals(botType.ToString(), expectedRole, StringComparison.OrdinalIgnoreCase))
+                        throw new InvalidOperationException("Activated follower role changed");
 
-                        Stopwatch stopWatch = new Stopwatch();
-                        stopWatch.Start();
-
-                        Action<BotOwner> OnBotState = new Action<BotOwner>((BotOwner me) =>
-                        {
-                            BotOwnerManualUpdatePatch.BotOwnerUpdate.Remove(me.ProfileId); // clear watcher
-                            try
-                            {
-                                me.Memory.DeleteInfoAboutEnemy(player.Player()); // prevent attack of player on spawn
-
-                                if (!FollowerTransitStateCache.IsTransitSpawnProfile(me.ProfileId))
-                                {
-                                    if (!FollowerRaidHealthRetention.Begin(me))
-                                        me.GetPlayer.ActiveHealthController.RestoreFullHealth();
-                                }
-                                else
-                                {
-                                    Modules.Logger.LogInfo($"[Transit] Preserved carried health for '{me.Profile?.Nickname ?? me.ProfileId}'.");
-                                }
-
-                                string key = profile.ProfileId;
-                                bool saved = side != EPlayerSide.Savage;
-                                if (saved && !string.Equals(me.ProfileId, key, StringComparison.Ordinal))
-                                    throw new InvalidOperationException("Activated follower identity changed");
-                                string tactic = saved ? profileTactic[key] :
-                                    (profileTactic.TryGetValue(key, out var scavTactic) ? scavTactic : "Default");
-                                float aggression = saved ? profileAggression[key] : 50f;
-                                var proficiency = saved ? profileProficiency[key] : null;
-                                float determination = saved ? profileDetermination[key] : 50f;
-
-                                WildSpawnType botType = type;
-
-                                if (me.Profile.Info?.Settings?.Role != null)
-                                {
-                                    botType = me.Profile.Info.Settings.Role;
-                                }
-                                if (saved && !string.Equals(botType.ToString(), expectedRole, StringComparison.OrdinalIgnoreCase))
-                                    throw new InvalidOperationException("Activated follower role changed");
-
-                                Modules.Logger.LogInfo("Tactic is " + tactic);
-
-                                var follower = BossPlayers.AddFollower(me, player, true, botType, tactic, aggression, proficiency,
-                                    determination);
-
-                                if (follower == null) throw new InvalidOperationException("Follower initialization returned no registered follower");
-                                registration.TrySetResult(follower);
-
-                            }
-                            catch (Exception ex)
-                            {
-                                registration.TrySetException(ex);
-                            }
-                        });
-
-                        BotOwnerManualUpdatePatch.BotOwnerUpdate.Add(owner.ProfileId, OnBotState);
-
-                        // Allegiance squadmates retain their recruited faction.
-                        if (owner.Side != followerSide)
-                        {
-                            owner.GetPlayer.Profile.Info.Side = followerSide;
-                        }
-
-                        botSpawnerClass.ActivateBotCallback(owner, botsData, new Action<BotOwner>((BotOwner follower) =>
-                        {
-                            Modules.Logger.LogInfo($"[FollowerSpawn] Native creation complete: profile={follower.ProfileId}, role={follower.Profile.Info.Settings.Role}, state={follower.BotState}, game={botCreator._game.Status}");
-
-                        }), shallBeGroup, stopWatch);
-
-                    });
-
-                    Modules.Logger.LogInfo("Trying to spawn " + profile.Nickname + " follower");
-
-                    int _inSpawnProcess = botSpawnerClass._inSpawnProcess;
-                    botSpawnerClass._inSpawnProcess = _inSpawnProcess + 1;
-
-                    // activate the bot
-                    BossPlayers.ShallBeFollower(profile.ProfileId);
-                    bool activated = await ActivateBotAtPosition(
-                        botCreator,
-                        profile,
-                        new spawnPosition(position, botsData.GetPosition().CorePointId, false),
-                        zone, true,
-                        GroupAction,
-                        OnActivate,
-                        token.GetCancelToken()
-                    );
-                    if (!activated) throw new InvalidOperationException("Follower activation failed");
-                    bool SpawnValid() => RaidValid() && activatedOwner != null && !activatedOwner.IsDead &&
-                        activatedOwner.GetPlayer?.HealthController?.IsAlive == true &&
-                        botCreator._game.Status != GameStatus.Stopped && botCreator._game.Status != GameStatus.Stopping &&
-                        botCreator._game.Status != GameStatus.SoftStopping;
-                    await CompleteSavedFollowerSpawn(registration.Task, () => activatedOwner, player, expectedRole,
-                        SpawnValid, () => botCreator._game.Status == GameStatus.Started);
+                    Modules.Logger.LogInfo("Tactic is " + tactic);
+                    return BossPlayers.AddFollower(bot, player, true, botType, tactic, aggression, proficiency, determination);
                 }
-                catch (Exception ex)
-                {
-                    if (registration.Task.IsFaulted) _ = registration.Task.Exception;
-                    var failed = activatedOwner ?? Controller?.BotSpawner?._bots?.BotOwners
-                        .FirstOrDefault(bot => bot.ProfileId == profile.ProfileId);
-                    Modules.Logger.LogInfo($"[FollowerSpawn] Failure context: profile={profile.ProfileId}, role={expectedRole}, state={failed?.BotState}, game={botCreator?._game?.Status}, registration={registration.Task.Status}, watcher={BotOwnerManualUpdatePatch.BotOwnerUpdate.ContainsKey(profile.ProfileId)}");
-                    BossPlayers.AbortSpawnFollower(profile.ProfileId, failed, player);
-                    ReportSpawnFailure(profile.Nickname, ex, player);
-                }
-
+                await SpawnSavedFollower(raidController, botCreator, botsData, profile,
+                    new spawnPosition(position, botsData.GetPosition().CorePointId, false), zone, player, followerSide,
+                    botsData.SpawnParams?.ShallBeGroup != null, GroupAction, Attach);
             }));
         }
 

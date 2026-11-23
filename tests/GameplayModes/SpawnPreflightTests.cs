@@ -67,42 +67,51 @@ internal static class SpawnPreflightTests
             check(false, reason);
         }
         var registered = new object();
-        check(ReferenceEquals(await FollowerSpawnReadiness.Registration(Task.FromResult(registered), TimeSpan.FromSeconds(1)), registered),
-            "registration preserves the real follower result");
-        await Fails(() => FollowerSpawnReadiness.Registration(Task.FromResult<object>(null), TimeSpan.FromSeconds(1)), "null registration cannot announce Ready");
-        await Fails(() => FollowerSpawnReadiness.Registration(Task.FromException<object>(new Exception("init failed")), TimeSpan.FromSeconds(1)), "failed initialization propagates to rollback");
-        await Fails(() => FollowerSpawnReadiness.Registration(new TaskCompletionSource<object>().Task, TimeSpan.Zero), "missing active-bot callback times out");
-        int loadingPolls = 0;
+        int loadingPolls = 0, pendingChecks = 0;
         var loadingRegistration = new TaskCompletionSource<object>();
-        var afterLoading = await FollowerSpawnReadiness.Registration(loadingRegistration.Task, TimeSpan.Zero,
-            () => true, () => loadingPolls >= 480, () =>
+        await FollowerSpawnReadiness.AwaitSignal(loadingRegistration.Task, () => true, () =>
             {
                 loadingPolls++;
-                if (loadingPolls == 480) loadingRegistration.SetResult(registered);
+                if (loadingPolls == 680) loadingRegistration.SetResult(registered);
                 return Task.CompletedTask;
-            });
-        check(loadingPolls == 480 && ReferenceEquals(afterLoading, registered),
-            "48 seconds of simulated loading cannot consume the registration timeout");
+            }, () => loadingPolls >= 480, () => pendingChecks++);
+        check(loadingPolls == 680 && pendingChecks == 680 && ReferenceEquals(await loadingRegistration.Task, registered),
+            "48 seconds of loading and 20 seconds of activation can still produce the actual follower");
+
         loadingPolls = 0;
-        await FollowerSpawnReadiness.Registration(Task.FromResult(registered), TimeSpan.Zero,
-            () => true, () => loadingPolls == 2, () => { loadingPolls++; return Task.CompletedTask; });
+        await FollowerSpawnReadiness.AwaitSignal(Task.FromResult(registered), () => true,
+            () => { loadingPolls++; return Task.CompletedTask; }, () => loadingPolls == 2);
         check(loadingPolls == 2, "early registration still waits for native raid start before combat readiness");
-        await Fails(() => FollowerSpawnReadiness.Registration(new TaskCompletionSource<object>().Task, TimeSpan.Zero,
-            () => true, () => true, () => throw new Exception("unexpected loading poll")),
-            "missing callback remains bounded once the raid has started");
+
+        foreach (bool started in new[] { false, true })
+        {
+            loadingPolls = 0;
+            await Fails(() => FollowerSpawnReadiness.AwaitSignal(new TaskCompletionSource<object>().Task,
+                () => loadingPolls < 200, () => { loadingPolls++; return Task.CompletedTask; }, () => started),
+                "invalid raid or actor cancels an unfinished spawn");
+            check(loadingPolls == 200, "pending registration polls until the raid or actor becomes invalid");
+        }
+
         loadingPolls = 0;
-        await Fails(() => FollowerSpawnReadiness.Registration(new TaskCompletionSource<object>().Task, TimeSpan.Zero,
-            () => loadingPolls < 2, () => false, () => { loadingPolls++; return Task.CompletedTask; }),
-            "raid teardown cancels registration while loading");
-        check(loadingPolls == 2, "canceled loading does not keep polling an old raid");
-        loadingPolls = 0;
-        await Fails(() => FollowerSpawnReadiness.Registration(Task.FromException<object>(new Exception("init failed")), TimeSpan.Zero,
-            () => true, () => false, () => { loadingPolls++; return Task.CompletedTask; }),
+        await Fails(() => FollowerSpawnReadiness.AwaitSignal(Task.FromException(new Exception("init failed")),
+            () => true, () => { loadingPolls++; return Task.CompletedTask; }, () => false),
             "initialization failure propagates during loading");
         check(loadingPolls == 0, "known initialization failure does not wait for raid start");
-        await Fails(() => FollowerSpawnReadiness.Registration(Task.FromCanceled<object>(new CancellationToken(true)), TimeSpan.Zero,
-            () => true, () => false, () => throw new Exception("unexpected loading poll")),
+        await Fails(() => FollowerSpawnReadiness.AwaitSignal(Task.FromCanceled(new CancellationToken(true)),
+            () => true, () => throw new Exception("unexpected loading poll"), () => false),
             "canceled native registration propagates during loading");
+
+        var nativeFailure = new InvalidOperationException("activation failed");
+        var activation = new TaskCompletionSource<object>();
+        var poll = new TaskCompletionSource<object>();
+        var waiting = FollowerSpawnReadiness.AwaitSignal(activation.Task, () => true, () => poll.Task, () => true);
+        activation.SetException(nativeFailure);
+        var winner = await Task.WhenAny(waiting, Task.Delay(TimeSpan.FromSeconds(1)));
+        check(ReferenceEquals(waiting, winner) && !poll.Task.IsCompleted,
+            "native failure wakes the lifecycle wait without waiting for the next poll");
+        try { await waiting; check(false, "activation failure must be reported"); }
+        catch (InvalidOperationException ex) { check(ReferenceEquals(ex, nativeFailure), "the original pending-stage exception propagates"); }
+
         int polls = 0;
         await FollowerSpawnReadiness.Wait(() => true, () => polls == 2, () => { polls++; return Task.CompletedTask; });
         check(polls == 2, "readiness waits for the actual combat claim");

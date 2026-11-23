@@ -5,26 +5,24 @@ namespace pitTeam.Modules
 {
     internal static class FollowerSpawnReadiness
     {
-        internal static async Task<T> Registration<T>(Task<T> registration, TimeSpan timeout,
-            Func<bool> valid, Func<bool> started, Func<Task> poll) where T : class
+        internal static async Task AwaitSignal(Task signal, Func<bool> valid, Func<Task> poll,
+            Func<bool> canComplete = null, Action onPending = null)
         {
-            // Native pre-created bots stay NonActive until the raid's CheckActivation.
-            // Loading time cannot consume the active-bot registration deadline.
             while (true)
             {
-                if (!valid()) throw new OperationCanceledException("Raid ended before follower registration");
-                if (registration.IsFaulted || registration.IsCanceled) return await registration;
-                if (started()) break;
-                await poll();
-            }
-            return await Registration(registration, timeout);
-        }
+                if (signal.IsFaulted || signal.IsCanceled) await signal;
+                if (!valid()) throw new OperationCanceledException("Follower spawn no longer belongs to a live raid or actor");
+                if (signal.IsCompleted)
+                {
+                    if (canComplete == null || canComplete()) return;
+                    // Registration can finish before the raid is ready for the combat handoff.
+                    await poll();
+                    continue;
+                }
 
-        internal static async Task<T> Registration<T>(Task<T> registration, TimeSpan timeout) where T : class
-        {
-            if (await Task.WhenAny(registration, Task.Delay(timeout)) != registration)
-                throw new TimeoutException("Follower registration timed out");
-            return await registration ?? throw new InvalidOperationException("Follower registration failed");
+                onPending?.Invoke();
+                await Task.WhenAny(signal, poll());
+            }
         }
 
         internal static async Task Wait(Func<bool> valid, Func<bool> ready, Func<Task> poll, int attempts = 100)
