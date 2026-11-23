@@ -929,6 +929,8 @@ Unhandled phrases and gestures are still forwarded to follower receivers from `A
 - `OnRepeatedContact` display text
 - optional `hideUnsupportedCommands` filtering for PMC players; player Scavs retain their full native phrase groups. Reused menus rebuild their phrase groups when switching between PMC and Scav so prior filtering cannot carry into the next raid.
 
+The in-raid hand gesture panel uses fixed positions. When the unlocked gestures leave at most one position free, Over There sits beside the upper row outside the native layout so all native gestures can keep their positions. The settings menu uses a separate grid that grows as gestures are added.
+
 The menu is not authoritative for command behavior. It only controls what the player can see/select and how labels are localized.
 
 ## Cleanup Rules

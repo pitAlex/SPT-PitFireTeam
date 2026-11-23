@@ -414,6 +414,7 @@ namespace pitTeam
 namespace pitTeam.Modules
 {
     internal static class FriendlyEncounterPenaltyRuntime { internal static Task ReloadAsync() => Task.CompletedTask; }
+    internal static class FollowerTransitStateCache { internal static bool HasCarriedGoons => false; }
     public enum EnemyTrackingMode { Simple, Realistic }
     internal static class FollowerInsuranceRaidReports { internal static Task WaitForPendingReportsAsync() => Task.CompletedTask; }
 }

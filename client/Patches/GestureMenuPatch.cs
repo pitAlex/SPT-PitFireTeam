@@ -220,6 +220,7 @@ namespace pitTeam.Patches
     internal class CreateGesturesPatch : ModulePatch
     {
         private const string OverThereSpriteFileName = "gesture_over_there.png";
+        private static readonly Vector2 OverTherePrestigePosition = new Vector2(170f, 138f);
         private static Sprite overThereSprite;
 
         protected override MethodBase GetTargetMethod()
@@ -240,6 +241,7 @@ namespace pitTeam.Patches
             gestureContainer.SetChild(gesturesMenuItem.transform);
             gesturesMenuItem.gameObject.name = gesture.ToString();
             gesturesMenuItem.Gesture = gesture;
+            PlaceOverThereWhenRaidLayoutIsFull(gestureContainer, gesturesMenuItem, gestureItems.Count);
 
             Sprite sprite = LoadOverThereSprite();
             if (sprite != null)
@@ -251,6 +253,25 @@ namespace pitTeam.Patches
             gestureItems.Add(gesturesMenuItem);
             list_2.Add(gesturesMenuItem);
             gesturesMenuItem.OnPointerClicked.Subscribe(new Action<GestureBaseItem.PointerClick>(__instance.CG_CreateGesture));
+        }
+
+        private static void PlaceOverThereWhenRaidLayoutIsFull(BaseTransformSolver container, GesturesMenuItem item, int nativeCount)
+        {
+            // The raid layout refuses to place any buttons when its fixed slots run out.
+            // Leave the last slot for the native Prestige 2 gesture and place Over There beside the upper row.
+            if (!container.TryGetComponent(out PredefinedLayoutGroup layout) ||
+                layout.PositionsToCenter is not { Length: > 0 } positions ||
+                nativeCount < positions.Length - 1 ||
+                item.transform is not RectTransform rect)
+            {
+                return;
+            }
+
+            var layoutElement = item.GetComponent<LayoutElement>() ?? item.gameObject.AddComponent<LayoutElement>();
+            layoutElement.ignoreLayout = true;
+            rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0.5f);
+            rect.anchoredPosition = OverTherePrestigePosition;
+            item.GetComponent<GestureItemBindAlignment>()?.AlignToTop();
         }
 
         private static Sprite LoadOverThereSprite()
